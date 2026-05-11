@@ -92,6 +92,7 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 	}
 
 	def copyURLToFile(objectId: String, fileUrl: String): File = try {
+		org.sunbird.common.SafeUrlValidator.validate(fileUrl)
 		val fileName = getBasePath(objectId) + File.separator + getFileNameFromURL(fileUrl)
 		val file = new File(fileName)
 		FileUtils.copyURLToFile(new URL(fileUrl), file)
