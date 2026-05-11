@@ -134,9 +134,15 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 	}
 
 	def extractPackage(file: File, basePath: String) = {
+		val baseDir = Paths.get(basePath).normalize()
+		Files.createDirectories(baseDir)
+		val resolvedBaseDir = baseDir.toRealPath()
 		val zipFile = new ZipFile(file)
 		for (entry <- zipFile.entries().asScala) {
-			val path = Paths.get(basePath + File.separator + entry.getName)
+			val path = resolvedBaseDir.resolve(entry.getName).normalize()
+			if (!path.startsWith(resolvedBaseDir))
+				throw new ClientException("ERR_INVALID_ZIP_ENTRY",
+					"Zip entry attempts path traversal: " + entry.getName)
 			if (entry.isDirectory) Files.createDirectories(path)
 			else {
 				Files.createDirectories(path.getParent)
