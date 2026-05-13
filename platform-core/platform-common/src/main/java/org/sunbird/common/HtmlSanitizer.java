@@ -32,6 +32,12 @@ public class HtmlSanitizer {
             "question", "responseDeclaration", "outcomeDeclaration"
     ));
 
+    private static final Set<String> IGNORE_FIELDS = new HashSet<>(Arrays.asList(
+            "createdOn", "lastUpdatedOn", "lastStatusChangedOn", "lastPublishedOn",
+            "lastSubmittedOn", "versionDate", "artifactUrl", "downloadUrl", "previewUrl",
+            "streamingUrl", "appIcon", "posterImage", "toc_url"
+    ));
+
     public static String sanitizeStrict(String input) {
         if (StringUtils.isBlank(input)) return input;
         return STRICT_POLICY.sanitize(input);
@@ -52,7 +58,7 @@ public class HtmlSanitizer {
     }
 
     public static String sanitizeField(String fieldName, String value) {
-        if (StringUtils.isBlank(value)) return value;
+        if (StringUtils.isBlank(value) || IGNORE_FIELDS.contains(fieldName)) return value;
         if (RICH_TEXT_FIELDS.contains(fieldName)) {
             return sanitizeRichText(value);
         }
