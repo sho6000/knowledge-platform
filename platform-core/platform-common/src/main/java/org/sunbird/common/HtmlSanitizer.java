@@ -4,6 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.owasp.html.HtmlPolicyBuilder;
 import org.owasp.html.PolicyFactory;
 import org.sunbird.common.Platform;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -85,11 +86,21 @@ public class HtmlSanitizer {
             if (json instanceof Map) {
                 sanitizeMap((Map<String, Object>) json, depth + 1);
             } else if (json instanceof List) {
+                json = ensureMutableList((List<Object>) json);
                 sanitizeList(fieldName, (List<Object>) json, depth + 1);
             }
             return JsonUtils.serialize(json);
         } catch (Exception e) {
             return RICH_TEXT_FIELDS.contains(fieldName) ? sanitizeRichText(value) : sanitizeStrict(value);
+        }
+    }
+
+    private static List<Object> ensureMutableList(List<Object> list) {
+        try {
+            list.set(0, list.get(0)); // Test if mutable
+            return list;
+        } catch (UnsupportedOperationException e) {
+            return new ArrayList<>(list);
         }
     }
 
@@ -117,9 +128,16 @@ public class HtmlSanitizer {
         for (int i = 0; i < list.size(); i++) {
             Object item = list.get(i);
             if (item instanceof String) {
-                list.set(i, sanitizeField(parentKey, (String) item, depth + 1));
+                try {
+                    list.set(i, sanitizeField(parentKey, (String) item, depth + 1));
+                } catch (UnsupportedOperationException e) {
+                    // List is immutable, skip sanitization for this item
+                }
             } else if (item instanceof Map) {
                 sanitizeMap((Map<String, Object>) item, depth + 1);
+            } else if (item instanceof List) {
+                List<Object> mutableSubList = ensureMutableList((List<Object>) item);
+                sanitizeList(parentKey, mutableSubList, depth + 1);
             }
         }
     }
