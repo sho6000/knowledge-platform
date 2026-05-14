@@ -3,7 +3,7 @@ package org.sunbird.common;
 import org.apache.commons.lang3.StringUtils;
 import org.owasp.html.HtmlPolicyBuilder;
 import org.owasp.html.PolicyFactory;
-
+import org.sunbird.common.Platform;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
 
 public class HtmlSanitizer {
 
+    private static final int MAX_DEPTH = Platform.getInteger("html.sanitizer.max.depth", 25);
+    
     private static final PolicyFactory STRICT_POLICY = new HtmlPolicyBuilder().toFactory();
 
     private static final PolicyFactory RICH_TEXT_POLICY = new HtmlPolicyBuilder()
@@ -58,36 +60,66 @@ public class HtmlSanitizer {
     }
 
     public static String sanitizeField(String fieldName, String value) {
-        if (StringUtils.isBlank(value) || IGNORE_FIELDS.contains(fieldName)) return value;
+        return sanitizeField(fieldName, value, 0);
+    }
+
+    private static String sanitizeField(String fieldName, String value, int depth) {
+        if (StringUtils.isBlank(value) || IGNORE_FIELDS.contains(fieldName) || depth > MAX_DEPTH) return value;
+        if (isJson(value)) {
+            return sanitizeJsonString(fieldName, value, depth + 1);
+        }
         if (RICH_TEXT_FIELDS.contains(fieldName)) {
             return sanitizeRichText(value);
         }
         return sanitizeStrict(value);
     }
 
+    private static boolean isJson(String value) {
+        String trimmed = value.trim();
+        return (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
+    }
+
+    private static String sanitizeJsonString(String fieldName, String value, int depth) {
+        try {
+            Object json = JsonUtils.deserialize(value, Object.class);
+            if (json instanceof Map) {
+                sanitizeMap((Map<String, Object>) json, depth + 1);
+            } else if (json instanceof List) {
+                sanitizeList(fieldName, (List<Object>) json, depth + 1);
+            }
+            return JsonUtils.serialize(json);
+        } catch (Exception e) {
+            return RICH_TEXT_FIELDS.contains(fieldName) ? sanitizeRichText(value) : sanitizeStrict(value);
+        }
+    }
+
     public static void sanitizeMap(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) return;
+        sanitizeMap(data, 0);
+    }
+
+    private static void sanitizeMap(Map<String, Object> data, int depth) {
+        if (data == null || data.isEmpty() || depth > MAX_DEPTH) return;
         List<String> keys = data.keySet().stream().collect(Collectors.toList());
         for (String key : keys) {
             Object value = data.get(key);
             if (value instanceof String) {
-                data.put(key, sanitizeField(key, (String) value));
+                data.put(key, sanitizeField(key, (String) value, depth + 1));
             } else if (value instanceof Map) {
-                sanitizeMap((Map<String, Object>) value);
+                sanitizeMap((Map<String, Object>) value, depth + 1);
             } else if (value instanceof List) {
-                sanitizeList(key, (List<Object>) value);
+                sanitizeList(key, (List<Object>) value, depth + 1);
             }
         }
     }
 
-    private static void sanitizeList(String parentKey, List<Object> list) {
-        if (list == null || list.isEmpty()) return;
+    private static void sanitizeList(String parentKey, List<Object> list, int depth) {
+        if (list == null || list.isEmpty() || depth > MAX_DEPTH) return;
         for (int i = 0; i < list.size(); i++) {
             Object item = list.get(i);
             if (item instanceof String) {
-                list.set(i, sanitizeField(parentKey, (String) item));
+                list.set(i, sanitizeField(parentKey, (String) item, depth + 1));
             } else if (item instanceof Map) {
-                sanitizeMap((Map<String, Object>) item);
+                sanitizeMap((Map<String, Object>) item, depth + 1);
             }
         }
     }

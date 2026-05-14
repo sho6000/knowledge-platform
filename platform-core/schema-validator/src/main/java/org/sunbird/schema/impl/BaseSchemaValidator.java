@@ -84,6 +84,7 @@ public abstract class BaseSchemaValidator implements ISchemaValidator {
     }
 
     public ValidationResult getStructuredData(Map<String, Object> input) {
+        HtmlSanitizer.sanitizeMap(input);
         Map<String, Object> relations = getRelations(input);
         Map<String, Object> externalData = getExternalProps(input);
         return new ValidationResult(input, relations, externalData);
