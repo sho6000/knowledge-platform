@@ -19,7 +19,7 @@ public class SearchInputValidator {
             "channel", "framework", "board", "medium", "gradeLevel", "subject",
             "resourceType", "audience", "license", "language", "domain",
             "targetFWIds", "se_boards", "se_mediums", "se_gradeLevels", "se_subjects",
-            "visibility", "compatibilityLevel", "mediaType", "origin"
+            "visibility", "compatibilityLevel", "mediaType", "origin", "createdBy"
     ));
 
     private static final Set<String> DEFAULT_SORT_FIELDS = new HashSet<>(Arrays.asList(
