@@ -145,15 +145,15 @@ class BaseMimeTypeManager(implicit ss: StorageService) {
 				val path = resolvedBaseDir.resolve(entry.getName).normalize()
 				if (!path.startsWith(resolvedBaseDir))
 					throw new ClientException("ERR_INVALID_ZIP_ENTRY",
-						"Zip entry attempts path traversal: " + entry.getName).toAbsolutePath.normalize()
-			if (!targetPath.startsWith(baseDirPath)) {
+						"Zip entry attempts path traversal: " + entry.getName)
+			if (!path.startsWith(baseDirPath)) {
 				throw new ClientException("ERR_INVALID_FILE", "Invalid zip entry path detected: " + entry.getName)
 			}
 			
-				if (entry.isDirectory) Files.createDirectories(targetPath)
+				if (entry.isDirectory) Files.createDirectories(path)
 				else {
-					Files.createDirectories(targetPath.getParent)
-					Files.copy(zipFile.getInputStream(entry), targetPath)
+					Files.createDirectories(path.getParent)
+					Files.copy(zipFile.getInputStream(entry), path)
 				}
 			}
 		} finally {
