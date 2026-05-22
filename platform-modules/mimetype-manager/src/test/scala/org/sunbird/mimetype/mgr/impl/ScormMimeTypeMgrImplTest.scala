@@ -1,5 +1,7 @@
 package org.sunbird.mimetype.mgr.impl
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import java.io.{File, FileOutputStream}
 import java.util.zip.{ZipEntry, ZipOutputStream}
 import org.apache.commons.io.FileUtils
@@ -13,8 +15,11 @@ import org.sunbird.models.UploadParams
 import scala.concurrent.Future
 
 class ScormMimeTypeMgrImplTest extends AsyncFlatSpec with Matchers with AsyncMockFactory {
+    val mapper = new ObjectMapper()
+    mapper.registerModule(DefaultScalaModule)
 
     implicit val ss: StorageService = mock[StorageService]
+
     implicit val oec: OntologyEngineContext = stub[OntologyEngineContext]
     val scormMgr = new ScormMimeTypeMgrImpl()(ss) {
         override protected val TEMP_FILE_LOCATION: String = System.getProperty("java.io.tmpdir") + File.separator + "content"
@@ -50,6 +55,25 @@ class ScormMimeTypeMgrImplTest extends AsyncFlatSpec with Matchers with AsyncMoc
 
         scormMgr.upload("do_1", getNode(), file, None, UploadParams()).map { result =>
             result("launchFile") shouldBe "index.html"
+            FileUtils.deleteQuietly(file)
+            succeed
+        }
+    }
+
+    "upload" should "succeed and return scoList for a multi-SCO SCORM package" in {
+        val manifest = """<manifest><organizations default="org"><organization identifier="org"><item identifier="item1" identifierref="res1"><title>SCO 1</title></item><item identifier="item2" identifierref="res2"><title>SCO 2</title></item></organization></organizations><resources><resource identifier="res1" href="sco1/index.html"/><resource identifier="res2" href="sco2/index.html"/></resources></manifest>"""
+        val file = createZip(Map("imsmanifest.xml" -> manifest, "sco1/index.html" -> "<html></html>", "sco2/index.html" -> "<html></html>"))
+
+        (ss.uploadFile(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("s3Key", "s3Url"))
+        (ss.uploadDirectory(_: String, _: File, _: Option[Boolean])).expects(*, *, *).returns(Array("url"))
+
+        scormMgr.upload("do_1", getNode(), file, None, UploadParams()).map { result =>
+            result("launchFile") shouldBe "sco1/index.html"
+            val scoListJson = result("scoList").asInstanceOf[String]
+            val scoList = mapper.readValue(scoListJson, classOf[List[Map[String, String]]])
+            scoList.size shouldBe 2
+            scoList.exists(sco => sco("identifier") == "item1" && sco("title") == "SCO 1" && sco("href") == "sco1/index.html") shouldBe true
+            scoList.exists(sco => sco("identifier") == "item2" && sco("title") == "SCO 2" && sco("href") == "sco2/index.html") shouldBe true
             FileUtils.deleteQuietly(file)
             succeed
         }
