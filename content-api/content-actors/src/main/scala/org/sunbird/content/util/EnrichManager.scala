@@ -12,6 +12,7 @@ import org.sunbird.telemetry.logger.TelemetryManager
 import java.util
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
+import scala.util.{Failure, Success, Try}
 
 object EnrichManager {
 
@@ -51,7 +52,7 @@ object EnrichManager {
         throw new ClientException("ERR_CONTENT_NOT_FOUND",
           s"Content not found for identifier(s): ${notFound.mkString(", ")}")
 
-      valid.foreach { case (id, (objectType, mimeType)) =>
+      val sendResults: List[Either[String, String]] = valid.map { case (id, (objectType, mimeType)) =>
         val ets = System.currentTimeMillis()
         val mid = s"LP.$ets.${java.util.UUID.randomUUID()}"
         val event = Map(
@@ -70,14 +71,28 @@ object EnrichManager {
             )
           )
         )
-        kfClient.send(ScalaJsonUtils.serialize(event), topic)
-        TelemetryManager.log(s"Enrich request emitted for $id ($objectType) to $topic")
+        Try(kfClient.send(ScalaJsonUtils.serialize(event), topic)) match {
+          case Success(_) =>
+            TelemetryManager.log(s"Enrich request emitted for $id ($objectType) to $topic")
+            Right(id)
+          case Failure(e) =>
+            TelemetryManager.error(s"Failed to emit enrich event for $id: ${e.getMessage}", e)
+            Left(id)
+        }
       }
+
+      val succeeded = sendResults.collect { case Right(id) => id }
+      val failed    = sendResults.collect { case Left(id)  => id }
+
+      if (succeeded.isEmpty)
+        throw new ClientException("ERR_KAFKA_SEND_FAILED",
+          s"Failed to emit enrich events for: ${failed.mkString(", ")}")
 
       Future.successful(
         ResponseHandler.OK()
-          .put("count", valid.size)
-          .put("identifiers", valid.map(_._1).asJava)
+          .put("count", succeeded.size)
+          .put("identifiers", succeeded.asJava)
+          .put("failed", failed.asJava)
       )
     }
   }
