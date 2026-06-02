@@ -66,6 +66,7 @@ public class OpenAIEmbeddingClient implements EmbeddingClient {
 
     @Override public String getName()       { return "openai"; }
     @Override public String getVersion()    { return "1.0"; }
+    @Override public String getModelId()    { return isAzure && config.getAzureDeployment() != null ? config.getAzureDeployment() : modelName; }
     @Override public int    getDimensions() { return config.getDimensions(); }
 
     @Override

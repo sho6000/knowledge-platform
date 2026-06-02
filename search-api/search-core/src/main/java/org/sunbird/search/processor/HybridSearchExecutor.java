@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Runs text and semantic searches in parallel and fuses their ranked lists
@@ -55,17 +56,34 @@ public final class HybridSearchExecutor {
         SearchProcessor textProcessor = new SearchProcessor();
         SearchProcessor semProcessor  = new SearchProcessor();
         Future<Map<String, Object>> textF = textProcessor.processSearch(textDto, true);
-        Future<Map<String, Object>> semF  = semProcessor.processSearch(semDto, true);
+        // Degrade gracefully if the semantic leg fails (embedding timeout, service down, etc.).
+        // A failed semF must not propagate as a 500 on hybrid requests; substitute an empty
+        // result map and mark the response degraded so callers can detect the fallback.
+        final AtomicBoolean degraded = new AtomicBoolean(false);
+        Future<Map<String, Object>> semFSafe = semProcessor.processSearch(semDto, true)
+                .recover(new scala.runtime.AbstractPartialFunction<Throwable, Map<String, Object>>() {
+                    @Override public boolean isDefinedAt(Throwable t) { return true; }
+                    @Override public Map<String, Object> apply(Throwable t) {
+                        logger.warn("hybrid: semantic leg failed, degrading to text-only. reason={}", t.getMessage());
+                        degraded.set(true);
+                        return Collections.emptyMap();
+                    }
+                }, ExecutionContext.Implicits$.MODULE$.global());
 
         int rrfK = readRrfK(dto);
         int limit  = dto.getLimit() <= 0 ? 50 : dto.getLimit();
         int offset = Math.max(0, dto.getOffset());
 
-        return textF.zip(semF).map(
+        return textF.zip(semFSafe).map(
                 new Mapper<Tuple2<Map<String, Object>, Map<String, Object>>, Map<String, Object>>() {
                     @Override
                     public Map<String, Object> apply(Tuple2<Map<String, Object>, Map<String, Object>> pair) {
-                        return fuse(pair._1(), pair._2(), rrfK, limit, offset);
+                        Map<String, Object> result = fuse(pair._1(), pair._2(), rrfK, limit, offset);
+                        if (degraded.get()) {
+                            result.put("degraded", true);
+                            result.put("degraded_reason", "semantic_leg_failed");
+                        }
+                        return result;
                     }
                 },
                 ExecutionContext.Implicits$.MODULE$.global()

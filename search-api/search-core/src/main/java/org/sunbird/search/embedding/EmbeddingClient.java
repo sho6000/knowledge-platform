@@ -17,6 +17,15 @@ public interface EmbeddingClient {
 
     String getVersion();
 
+    /**
+     * Stable unique identifier for the specific model/deployment in use.
+     * Used as the {@code model} component of the embedding cache key.
+     * Must change whenever the vector space changes (different model, different
+     * deployment) to prevent stale cache entries from corrupting recall.
+     * Examples: "text-embedding-3-small", "text-embedding-ada-002", "host:port".
+     */
+    String getModelId();
+
     /** Must match the dimension on the OpenSearch knn_vector mapping. */
     int getDimensions();
 

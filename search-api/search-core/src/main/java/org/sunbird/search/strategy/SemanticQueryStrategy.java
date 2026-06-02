@@ -57,10 +57,10 @@ public class SemanticQueryStrategy implements QueryStrategy {
         }
 
         EmbeddingClient client = EmbeddingClientFactory.get();
-        float[] vec = cache.get(client.getName(), client.getVersion(), query);
+        float[] vec = cache.get(client.getName(), client.getModelId(), query);
         if (vec == null) {
             vec = client.embed(query);
-            cache.put(client.getName(), client.getVersion(), query, vec);
+            cache.put(client.getName(), client.getModelId(), query, vec);
         }
 
         QuantizationStrategy quantizer = QuantizationStrategyFactory.get(

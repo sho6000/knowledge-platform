@@ -49,6 +49,7 @@ public class E5EmbeddingClient implements EmbeddingClient {
 
     @Override public String getName()       { return "e5"; }
     @Override public String getVersion()    { return "2.0"; }
+    @Override public String getModelId()    { return endpointUrl; }
     @Override public int    getDimensions() { return config.getDimensions(); }
 
     @Override
