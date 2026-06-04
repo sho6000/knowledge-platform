@@ -1,15 +1,12 @@
 package org.sunbird.actors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.pekko.dispatch.Mapper;
 import org.sunbird.common.Platform;
 import org.sunbird.common.dto.Request;
 import org.sunbird.common.dto.Response;
 import org.sunbird.common.dto.ResponseHandler;
 import org.sunbird.common.exception.ClientException;
 import org.sunbird.kafka.client.KafkaClient;
-import org.sunbird.search.dto.SearchDTO;
-import org.sunbird.search.processor.SearchProcessor;
 import org.sunbird.search.util.SearchConstants;
 import org.sunbird.telemetry.logger.TelemetryManager;
 import scala.concurrent.ExecutionContext;
@@ -53,66 +50,61 @@ public class EnrichActor extends SearchBaseActor {
                 ? Platform.config.getString("kafka.publish.request.topic")
                 : "sunbirddev.publish.job.request";
 
-        SearchDTO searchDTO = buildIdentifierSearchDTO(identifiers);
-        SearchProcessor processor = new SearchProcessor();
+        return scala.concurrent.Future.apply(new scala.runtime.AbstractFunction0<Response>() {
+            @Override
+            public Response apply() {
+                try {
+                    List<String> rawDocs = org.sunbird.search.client.ElasticSearchUtil
+                            .getMultiDocumentAsStringByIdList(SearchConstants.COMPOSITE_SEARCH_INDEX, identifiers);
 
-        try {
-        return processor.processSearch(searchDTO, true).map(
-                new Mapper<Map<String, Object>, Response>() {
-                    @Override
-                    public Response apply(Map<String, Object> result) {
-                        List<Map<String, Object>> docs = (List<Map<String, Object>>)
-                                result.getOrDefault("results", Collections.emptyList());
-
-                        // Index by base identifier (strip .img suffix from image nodes)
-                        Map<String, Map<String, Object>> docMap = new LinkedHashMap<>();
-                        for (Map<String, Object> doc : docs) {
-                            String id = String.valueOf(doc.getOrDefault("identifier", ""));
-                            if (id.endsWith(".img")) id = id.substring(0, id.length() - 4);
-                            docMap.putIfAbsent(id, doc);
-                        }
-
-                        List<String> notFound = new ArrayList<>();
-                        for (String id : identifiers) {
-                            if (!docMap.containsKey(id)) notFound.add(id);
-                        }
-                        if (!notFound.isEmpty()) {
-                            throw new ClientException("ERR_CONTENT_NOT_FOUND",
-                                    "Content not found for identifier(s): " + String.join(", ", notFound));
-                        }
-
-                        List<String> succeeded = new ArrayList<>();
-                        List<String> failed = new ArrayList<>();
-                        for (String id : identifiers) {
-                            Map<String, Object> doc = docMap.get(id);
-                            String objectType = normalizeObjectType(
-                                    String.valueOf(doc.getOrDefault("objectType", "Content")));
-                            String mimeType = String.valueOf(doc.getOrDefault("mimeType", ""));
-                            try {
-                                kafkaClient().send(buildEvent(id, objectType, mimeType), topic);
-                                TelemetryManager.log("EnrichActor: emitted enrich event for " + id + " (" + objectType + ")");
-                                succeeded.add(id);
-                            } catch (Exception e) {
-                                TelemetryManager.error("EnrichActor: kafka send failed for " + id + ": " + e.getMessage(), e);
-                                failed.add(id);
-                            }
-                        }
-
-                        if (succeeded.isEmpty()) {
-                            throw new ClientException("ERR_KAFKA_SEND_FAILED",
-                                    "Failed to emit enrich events for: " + String.join(", ", failed));
-                        }
-
-                        Response response = ResponseHandler.OK();
-                        response.put("count", succeeded.size());
-                        response.put("identifiers", succeeded);
-                        response.put("failed", failed);
-                        return response;
+                    Map<String, Map<String, Object>> docMap = new LinkedHashMap<>();
+                    for (String raw : rawDocs) {
+                        Map<String, Object> doc = MAPPER.readValue(raw, Map.class);
+                        String id = String.valueOf(doc.getOrDefault("identifier", ""));
+                        if (id.endsWith(".img")) id = id.substring(0, id.length() - 4);
+                        docMap.putIfAbsent(id, doc);
                     }
-                }, ExecutionContext.Implicits$.MODULE$.global());
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to execute enrich search query", e);
-        }
+
+                    List<String> notFound = new ArrayList<>();
+                    for (String id : identifiers) {
+                        if (!docMap.containsKey(id)) notFound.add(id);
+                    }
+                    if (!notFound.isEmpty())
+                        throw new ClientException("ERR_CONTENT_NOT_FOUND",
+                                "Content not found for identifier(s): " + String.join(", ", notFound));
+
+                    List<String> succeeded = new ArrayList<>();
+                    List<String> failed = new ArrayList<>();
+                    for (String id : identifiers) {
+                        Map<String, Object> doc = docMap.get(id);
+                        String objectType = normalizeObjectType(String.valueOf(doc.getOrDefault("objectType", "Content")));
+                        String mimeType = String.valueOf(doc.getOrDefault("mimeType", ""));
+                        try {
+                            kafkaClient().send(buildEvent(id, objectType, mimeType), topic);
+                            TelemetryManager.log("EnrichActor: emitted enrich event for " + id + " (" + objectType + ")");
+                            succeeded.add(id);
+                        } catch (Exception e) {
+                            TelemetryManager.error("EnrichActor: kafka send failed for " + id + ": " + e.getMessage(), e);
+                            failed.add(id);
+                        }
+                    }
+
+                    if (succeeded.isEmpty())
+                        throw new ClientException("ERR_KAFKA_SEND_FAILED",
+                                "Failed to emit enrich events for: " + String.join(", ", failed));
+
+                    Response response = ResponseHandler.OK();
+                    response.put("count", succeeded.size());
+                    response.put("identifiers", succeeded);
+                    response.put("failed", failed);
+                    return response;
+                } catch (ClientException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new RuntimeException("EnrichActor: failed to fetch documents from index", e);
+                }
+            }
+        }, ExecutionContext.Implicits$.MODULE$.global());
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -130,23 +122,6 @@ public class EnrichActor extends SearchBaseActor {
             throw new ClientException("ERR_INVALID_REQUEST", "identifiers list must not be empty");
         }
         return ids;
-    }
-
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private SearchDTO buildIdentifierSearchDTO(List<String> identifiers) {
-        SearchDTO dto = new SearchDTO();
-        dto.setOperation(SearchConstants.SEARCH_OPERATION_AND);
-        // buffer for .img variants
-        dto.setLimit(identifiers.size() * 2 + 10);
-
-        Map<String, Object> idProp = new LinkedHashMap<>();
-        idProp.put("propertyName", "identifier");
-        idProp.put("operation", SearchConstants.SEARCH_OPERATION_EQUAL);
-        idProp.put("values", identifiers);
-
-        dto.setProperties(new ArrayList<>(Collections.singletonList((Map) idProp)));
-        dto.setFields(new ArrayList<>(Arrays.asList("identifier", "objectType", "mimeType", "status")));
-        return dto;
     }
 
     private String normalizeObjectType(String objectType) {
