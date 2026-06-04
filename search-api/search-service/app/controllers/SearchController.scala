@@ -60,6 +60,7 @@ class SearchController @Inject()(@Named(ActorNames.SEARCH_ACTOR) searchActor: Ac
 
     def triggerEnrich() = Action.async { implicit request =>
         val internalReq = getRequest(ApiId.TRIGGER_ENRICH)
+        internalReq.setOperation("triggerEnrich")
         setHeaderContext(internalReq)
         getResult(ApiId.TRIGGER_ENRICH, enrichActor, internalReq)
     }

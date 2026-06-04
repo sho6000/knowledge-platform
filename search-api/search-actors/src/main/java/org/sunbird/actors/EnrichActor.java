@@ -26,8 +26,17 @@ import java.util.*;
  */
 public class EnrichActor extends SearchBaseActor {
 
-    private static final KafkaClient KAFKA_CLIENT = new KafkaClient();
+    private static volatile KafkaClient KAFKA_CLIENT;
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static KafkaClient kafkaClient() {
+        if (KAFKA_CLIENT == null) {
+            synchronized (EnrichActor.class) {
+                if (KAFKA_CLIENT == null) KAFKA_CLIENT = new KafkaClient();
+            }
+        }
+        return KAFKA_CLIENT;
+    }
 
     @Override
     public Future<Response> onReceive(Request request) throws Throwable {
@@ -80,7 +89,7 @@ public class EnrichActor extends SearchBaseActor {
                                     String.valueOf(doc.getOrDefault("objectType", "Content")));
                             String mimeType = String.valueOf(doc.getOrDefault("mimeType", ""));
                             try {
-                                KAFKA_CLIENT.send(buildEvent(id, objectType, mimeType), topic);
+                                kafkaClient().send(buildEvent(id, objectType, mimeType), topic);
                                 TelemetryManager.log("EnrichActor: emitted enrich event for " + id + " (" + objectType + ")");
                                 succeeded.add(id);
                             } catch (Exception e) {
