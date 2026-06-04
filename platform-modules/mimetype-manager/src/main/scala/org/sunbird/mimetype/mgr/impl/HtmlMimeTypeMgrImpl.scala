@@ -30,7 +30,7 @@ class HtmlMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManag
                 }
             }
         } else {
-            TelemetryManager.error("ERR_INVALID_FILE:: " + "Please Provide Valid File! with file name: " + uploadFile.getName)
+            TelemetryManager.error("ERR_INVALID_FILE" + "Please Provide Valid File! with file name: " + uploadFile.getName)
             throw new ClientException("ERR_INVALID_FILE", "Please Provide Valid File!")
         }
 
@@ -39,14 +39,7 @@ class HtmlMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManag
     override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
         validateUploadRequest(objectId, node, fileUrl)
         val file = copyURLToFile(objectId, fileUrl)
-        try {
-            upload(objectId, node, file, filePath, params)
-        } finally {
-            val parentDir = file.getParentFile
-            if (parentDir != null && parentDir.exists()) {
-                org.apache.commons.io.FileUtils.deleteDirectory(parentDir)
-            }
-        }
+        upload(objectId, node, file, filePath, params)
     }
 
     override def review(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {

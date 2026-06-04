@@ -2,8 +2,8 @@ package org.sunbird.mimetype.mgr.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import java.io.{File, InputStream}
-import java.util.zip.ZipFile
+import java.io.File
+import java.nio.file.Paths
 import javax.xml.parsers.SAXParserFactory
 
 import org.sunbird.cloudstore.StorageService
@@ -15,7 +15,8 @@ import org.sunbird.models.UploadParams
 import org.sunbird.telemetry.logger.TelemetryManager
 
 import scala.concurrent.{ExecutionContext, Future, blocking}
-import scala.xml.Elem
+import scala.xml.{Elem, NodeSeq}
+import scala.xml.factory.XMLLoader
 
 object ScormMimeTypeMgrImpl {
     private val mapper: ObjectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
@@ -28,60 +29,67 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
             blocking {
                 validateUploadRequest(objectId, node, uploadFile)
                 TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
-                if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
-                    val zipFile = new ZipFile(uploadFile)
-                    try {
-                        val manifestStream = zipFile.getInputStream(zipFile.getEntry("imsmanifest.xml"))
-                        val scoList = try {
-                            getScoList(getSecureXml(manifestStream))
-                        } finally {
-                            manifestStream.close()
-                        }
+                val extractionBasePath = getBasePath(objectId)
+                try {
+                    if (isValidPackageStructure(uploadFile, List("imsmanifest.xml"))) {
+                        extractPackage(uploadFile, extractionBasePath)
+                        val manifestFile = new File(extractionBasePath + File.separator + "imsmanifest.xml")
+                        
+                        val scoList = getScoList(getSecureXml(manifestFile))
 
                         if (scoList.isEmpty) {
                             throw new ClientException("ERR_INVALID_FILE", "No SCOs found in imsmanifest.xml!")
                         }
 
-                        val launchFile = getValidatedLaunchFile(zipFile, scoList.head.getOrElse("href", ""))
-
-                        node.getMetadata.put("scoList", ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList))
+                        // Validate all SCO hrefs up-front
+                        scoList.foreach(sco => getValidatedLaunchFile(extractionBasePath, sco.getOrElse("href", "")))
+                        
+                        val launchFile = scoList.head.getOrElse("href", "")
+                        val scoListJson = ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList)
+                        
+                        // removed manual node.getMetadata.put calls
 
                         val urls: Array[String] = uploadArtifactToCloud(uploadFile, objectId, filePath)
                         
-                        node.getMetadata.put("s3Key", urls(IDX_S3_KEY))
-                        node.getMetadata.put("artifactUrl", urls(IDX_S3_URL))
-                        
                         extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
                         
-                        Map[String, AnyRef]("identifier" -> objectId, "artifactUrl" -> urls(IDX_S3_URL), "size" -> getFileSize(uploadFile).asInstanceOf[AnyRef], "s3Key" -> urls(IDX_S3_KEY), "launchFile" -> launchFile, "scoList" -> ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList))
-                    } finally {
-                        zipFile.close()
+                        Map[String, AnyRef](
+                            "identifier"  -> objectId,
+                            "artifactUrl" -> urls(IDX_S3_URL),
+                            "s3Key"       -> urls(IDX_S3_KEY),
+                            "size"        -> getFileSize(uploadFile).asInstanceOf[AnyRef],
+                            "launchFile"  -> launchFile,
+                            "scoList"     -> scoListJson
+                        )
+
+                    } else {
+                        TelemetryManager.error("ERR_INVALID_FILE:: " + "Invalid SCORM package structure: imsmanifest.xml not found! with file name: " + uploadFile.getName)
+                        throw new ClientException("ERR_INVALID_FILE", "Invalid SCORM package: imsmanifest.xml is missing!")
                     }
-                } else {
-                    TelemetryManager.error("ERR_INVALID_FILE:: " + "Invalid SCORM package structure: imsmanifest.xml not found! with file name: " + uploadFile.getName)
-                    throw new ClientException("ERR_INVALID_FILE", "Invalid SCORM package: imsmanifest.xml is missing!")
+                } finally {
+                    delete(new File(extractionBasePath))
                 }
             }
         }
     }
 
-    private def getValidatedLaunchFile(zipFile: ZipFile, launchFile: String): String = {
+    private def getValidatedLaunchFile(extractionBasePath: String, launchFile: String): String = {
         if (launchFile.isEmpty) {
             throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
         }
 
-        val basePath = java.nio.file.Paths.get("virtual-base")
+        // Validate launchFile containment and existence
+        val basePath = Paths.get(extractionBasePath)
         val launchPath = basePath.resolve(launchFile).normalize()
         
-        TelemetryManager.info(s"Validating launch file: launchFile=$launchFile, normalizedPath=${launchPath.toString}")
+        TelemetryManager.info(s"Validating launch file: basePath=$basePath, launchFile=$launchFile, combinedPath=${launchPath.toAbsolutePath}")
 
         if (!launchPath.startsWith(basePath)) {
             TelemetryManager.error("ERR_INVALID_FILE:: Potential path traversal detected: " + launchFile)
             throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
         }
 
-        val entry = zipFile.getEntry(launchFile)
-        if (entry == null || entry.isDirectory) {
+        if (!launchPath.toFile.exists() || launchPath.toFile.isDirectory) {
             TelemetryManager.error("ERR_INVALID_FILE:: Launch file defined in imsmanifest.xml does not exist or is a directory: " + launchFile)
             throw new ClientException("ERR_INVALID_FILE", "The launch file '" + launchFile + "' specified in imsmanifest.xml is missing or invalid!")
         }
@@ -98,7 +106,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         }.toList
     }
 
-    private def getSecureXml(inputStream: InputStream): Elem = {
+    private def getSecureXml(manifestFile: File): Elem = {
         val spf = SAXParserFactory.newInstance()
         spf.setNamespaceAware(true)
         spf.setFeature("http://xml.org/sax/features/external-general-entities", false)
@@ -107,20 +115,13 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         spf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
         
         val saxParser = spf.newSAXParser()
-        scala.xml.XML.withSAXParser(saxParser).load(inputStream)
+        scala.xml.XML.withSAXParser(saxParser).loadFile(manifestFile)
     }
 
     override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
         validateUploadRequest(objectId, node, fileUrl)
         val file = copyURLToFile(objectId, fileUrl)
-        try {
-            upload(objectId, node, file, filePath, params)
-        } finally {
-            val parentDir = file.getParentFile
-            if (parentDir != null && parentDir.exists()) {
-                org.apache.commons.io.FileUtils.deleteDirectory(parentDir)
-            }
-        }
+        upload(objectId, node, file, filePath, params)
     }
 
     override def review(objectId: String, node: Node)(implicit ec: ExecutionContext, ontologyEngineContext: OntologyEngineContext): Future[Map[String, AnyRef]] = {
