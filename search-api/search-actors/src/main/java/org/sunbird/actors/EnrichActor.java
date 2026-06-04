@@ -144,8 +144,8 @@ public class EnrichActor extends SearchBaseActor {
         idProp.put("operation", SearchConstants.SEARCH_OPERATION_EQUAL);
         idProp.put("values", identifiers);
 
-        dto.setProperties(Collections.singletonList((Map) idProp));
-        dto.setFields(Arrays.asList("identifier", "objectType", "mimeType", "status"));
+        dto.setProperties(new ArrayList<>(Collections.singletonList((Map) idProp)));
+        dto.setFields(new ArrayList<>(Arrays.asList("identifier", "objectType", "mimeType", "status")));
         return dto;
     }
 
