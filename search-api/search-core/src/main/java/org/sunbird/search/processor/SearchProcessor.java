@@ -292,6 +292,10 @@ public class SearchProcessor {
 			Object msObj = searchDTO.getSemanticParams().get("min_score");
 			if (msObj instanceof Number) {
 				float ms = ((Number) msObj).floatValue();
+				if (ms < 0f || ms > 1f)
+					throw new org.sunbird.common.exception.ClientException(
+							SearchConstants.ERR_SEMANTIC_MIN_SCORE_INVALID,
+							"semantic.min_score must be between 0.0 and 1.0, got: " + ms);
 				if (ms > 0f) searchSourceBuilder.minScore(ms);
 			}
 		}
