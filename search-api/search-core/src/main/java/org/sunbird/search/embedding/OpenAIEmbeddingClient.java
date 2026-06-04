@@ -52,7 +52,7 @@ public class OpenAIEmbeddingClient implements EmbeddingClient {
             String endpoint = config.getAzureEndpoint();
             while (endpoint.endsWith("/")) endpoint = endpoint.substring(0, endpoint.length() - 1);
             String deployment = config.getAzureDeployment() != null ? config.getAzureDeployment() : modelName;
-            String apiVersion = config.getAzureApiVersion() != null ? config.getAzureApiVersion() : "2024-12-01-preview";
+            String apiVersion = config.getAzureApiVersion() != null ? config.getAzureApiVersion() : "2023-05-15";
             this.apiUrl = endpoint + "/openai/deployments/" + deployment + "/embeddings?api-version=" + apiVersion;
         } else {
             this.apiUrl = "https://api.openai.com/v1/embeddings";

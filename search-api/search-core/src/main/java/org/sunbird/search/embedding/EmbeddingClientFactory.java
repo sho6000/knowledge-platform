@@ -52,7 +52,7 @@ public final class EmbeddingClientFactory {
                     .model(getString("semantic_search.openai.model", "text-embedding-3-small"))
                     .azureEndpoint(getString("semantic_search.openai.azure_endpoint", ""))
                     .azureDeployment(getString("semantic_search.openai.azure_deployment", ""))
-                    .azureApiVersion(getString("semantic_search.openai.azure_api_version", "2024-12-01-preview"))
+                    .azureApiVersion(getString("semantic_search.openai.azure_api_version", "2023-05-15"))
                     .build();
             return new OpenAIEmbeddingClient(cfg);
         }
