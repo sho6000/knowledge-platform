@@ -185,6 +185,52 @@ Client asked for `semantic`, embedding API failed:
 }
 ```
 
+## Parameter precedence
+
+Semantic parameters follow a three-tier fallback chain:
+
+1. **Request parameter** (highest priority) — `request.semantic.*` in the API call
+2. **Server config** — `semantic_search.*` in `application.conf`
+3. **Hardcoded default** (lowest priority) — built into the strategy
+
+**Examples:**
+
+| Param | Request | Config | Hardcoded | Used |
+|-------|---------|--------|-----------|------|
+| `k` | `100` | `default_k: 50` | `50` | `100` (request wins) |
+| `k` | (omitted) | `default_k: 50` | `50` | `50` (config wins) |
+| `k` | (omitted) | (omitted) | `50` | `50` (hardcoded) |
+| `min_score` | `0.4` | (omitted) | `0.0` | `0.4` (request wins) |
+| `schema_versions` | (omitted) | `["1.0", "1.1"]` | (none) | `["1.0", "1.1"]` (config) |
+| `vector_field` | (omitted) | (omitted) | `"chunks.embedding"` | `"chunks.embedding"` (hardcoded) |
+
+**Why three tiers?**
+
+- **Request override:** Callers can tune per-query (e.g., `k: 200` for broader recall on a specific search)
+- **Config default:** Service-wide baseline and safety guardrails (e.g., `max_k: 1000` to prevent abuse)
+- **Hardcoded fallback:** Sane defaults when config key is missing (backward compatibility)
+
+**Config keys and hardcoded defaults:**
+
+```hocon
+semantic_search {
+  default_k        = 50         # default, can be overridden per-request
+  max_k            = 1000       # hard ceiling, cannot override per-request
+  min_score        = 0.0        # default, can be overridden per-request
+  vector_field     = "chunks.embedding"
+  quantization_strategy = "int8"
+  schema_versions  = ["1.0"]
+  rrf_k            = 60
+  embedding_cache {
+    enabled        = true
+    size           = 1024
+    ttl_seconds    = 300
+  }
+}
+```
+
+---
+
 ## Errors
 
 | Code | HTTP | When |

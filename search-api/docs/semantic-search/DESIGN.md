@@ -222,6 +222,59 @@ semantic_search {
 }
 ```
 
+## Parameter precedence
+
+Semantic parameters follow a three-tier fallback chain, allowing clients to override service defaults per-request:
+
+```
+┌─────────────────────────────────────────────────┐
+│ 1. Request parameter (highest priority)         │
+│    e.g., request.semantic.k = 100              │
+└─────────────────────────────────────────────────┘
+                       ↓ (if omitted)
+┌─────────────────────────────────────────────────┐
+│ 2. Server config                                │
+│    e.g., semantic_search.default_k = 50       │
+└─────────────────────────────────────────────────┘
+                       ↓ (if omitted)
+┌─────────────────────────────────────────────────┐
+│ 3. Hardcoded default (lowest priority)          │
+│    e.g., 50                                     │
+└─────────────────────────────────────────────────┘
+```
+
+### Parameter hierarchy
+
+| Parameter | Request override | Config default | Hardcoded fallback | Notes |
+|-----------|------------------|----------------|--------------------|-------|
+| `k` | Yes | `semantic_search.default_k` | 50 | Request must ≤ `max_k` |
+| `min_score` | Yes | `semantic_search.min_score` | 0.0 | Validated to [0,1] |
+| `schema_versions` | Yes | `semantic_search.schema_versions` | none | Omitted = no filter |
+| `rrf_k` | Yes | `semantic_search.rrf_k` | 60 | Hybrid only |
+| `vector_field` | Yes | `semantic_search.vector_field` | "chunks.embedding" | A/B testing override |
+| `max_k` | No | `semantic_search.max_k` | 1000 | Hard ceiling, not overridable |
+| `quantization_strategy` | Yes | `semantic_search.quantization_strategy` | "int8" | Must match index-time |
+
+### Why three tiers?
+
+- **Request override:** Allows callers to tune per-query (e.g., `k: 200` for broader recall on a specific search).
+- **Config default:** Service-wide baseline and safety guardrails (e.g., `max_k: 1000` prevents abuse, `embedding_cache.ttl_seconds` tunes freshness).
+- **Hardcoded fallback:** Sane defaults ensure feature works even with minimal config (backward compatibility).
+
+### Implementation location
+
+Fallback resolution happens in `SemanticQueryStrategy.build()` and `SearchProcessor.processSearchQuery()`:
+
+```java
+// Three-tier pattern in SemanticQueryStrategy:
+QuantizationStrategy quantizer = QuantizationStrategyFactory.get(
+    getString(dto.getSemanticParams(), "quantization_strategy",    // 1. request
+            getString("semantic_search.quantization_strategy",     // 2. config
+                    "int8")));                                      // 3. hardcoded
+```
+
+---
+
 ## Observability
 
 Metrics (Dropwizard, reuse existing search-api metric infra):

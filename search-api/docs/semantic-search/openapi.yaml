@@ -356,36 +356,55 @@ components:
       type: object
       description: |
         Knobs for the semantic / hybrid path. Ignored when `search_mode = text`.
+
+        **Parameter precedence** (request wins over config wins over hardcoded):
+          1. Request value (e.g., `semantic.k: 100`)
+          2. Server config (e.g., `semantic_search.default_k` in application.conf)
+          3. Hardcoded default (e.g., 50)
+
+        Only `k` has both a default and a maximum. Other params are optional
+        and fall through to config / hardcoded defaults if omitted.
       properties:
         k:
           type: integer
           default: 50
           minimum: 1
           maximum: 1000
-          description: kNN top-k per shard.
+          description: |
+            kNN top-k per shard.
+            Defaults to `semantic_search.default_k` (50 hardcoded).
+            Cannot exceed `semantic_search.max_k` (1000 hardcoded).
         min_score:
           type: number
           format: float
           minimum: 0
           maximum: 1
           default: 0.0
-          description: Drop chunks below this cosine score.
+          description: |
+            Drop chunks below this cosine similarity score.
+            Defaults to `semantic_search.min_score` (0.0 hardcoded).
+            Must be in range [0.0, 1.0]; values outside throw ERR_SEMANTIC_MIN_SCORE_INVALID.
         schema_versions:
           type: array
           items: { type: string }
           description: |
-            Filter on `chunks.schema_version`. Use during reindex transitions to
+            Filter on `chunks.schema_version` keyword. Use during reindex transitions to
             pin to specific embedding generations.
+            Defaults to `semantic_search.schema_versions` from config if omitted.
           example: ["1.0"]
         rrf_k:
           type: integer
           default: 60
           minimum: 1
-          description: Reciprocal-rank-fusion constant. Hybrid only.
+          description: |
+            Reciprocal-rank-fusion constant. Hybrid only.
+            Defaults to `semantic_search.rrf_k` (60 hardcoded).
         vector_field:
           type: string
           default: "chunks.embedding"
-          description: Override for A/B vector-field testing.
+          description: |
+            Override for A/B testing alternate vector fields.
+            Defaults to `semantic_search.vector_field` (chunks.embedding hardcoded).
 
     SearchResponse:
       type: object
