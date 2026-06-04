@@ -56,6 +56,12 @@ public class SemanticQueryStrategy implements QueryStrategy {
                     "query is required for semantic search");
         }
 
+        // Defensive: initialize semanticParams if null
+        Map<String, Object> semanticParams = dto.getSemanticParams();
+        if (semanticParams == null) {
+            semanticParams = new java.util.HashMap<>();
+        }
+
         EmbeddingClient client = EmbeddingClientFactory.get();
         float[] vec = cache.get(client.getName(), client.getModelId(), query);
         if (vec == null) {
@@ -64,18 +70,18 @@ public class SemanticQueryStrategy implements QueryStrategy {
         }
 
         QuantizationStrategy quantizer = QuantizationStrategyFactory.get(
-                getString(dto.getSemanticParams(), "quantization_strategy",
+                getString(semanticParams, "quantization_strategy",
                         getString("semantic_search.quantization_strategy", "int8")));
         byte[] bytes = quantizer.quantize(vec);
 
-        String vectorField = (String) dto.getSemanticParams().getOrDefault(
+        String vectorField = (String) semanticParams.getOrDefault(
                 "vector_field",
                 getString("semantic_search.vector_field", DEFAULT_VECTOR_FIELD));
         String vectorPath = vectorField.contains(".")
                 ? vectorField.substring(0, vectorField.indexOf('.'))
                 : DEFAULT_VECTOR_PATH;
 
-        int k = clampK(dto);
+        int k = clampK(semanticParams);
 
         // The OpenSearch kNN plugin's QueryBuilder is not on the
         // rest-high-level-client classpath; build the kNN JSON directly and
@@ -93,7 +99,7 @@ public class SemanticQueryStrategy implements QueryStrategy {
                 .must(new WrapperQueryBuilder(knn.toString()));
 
         @SuppressWarnings("unchecked")
-        List<String> schemaVersions = (List<String>) dto.getSemanticParams().get("schema_versions");
+        List<String> schemaVersions = (List<String>) semanticParams.get("schema_versions");
         if (schemaVersions == null || schemaVersions.isEmpty()) {
             schemaVersions = getStringList("semantic_search.schema_versions");
         }
@@ -183,12 +189,12 @@ public class SemanticQueryStrategy implements QueryStrategy {
         return null;
     }
 
-    private int clampK(SearchDTO dto) {
+    private int clampK(Map<String, Object> semanticParams) {
         int maxK = Platform.config.hasPath("semantic_search.max_k")
                 ? Platform.config.getInt("semantic_search.max_k") : 1000;
         int defaultK = Platform.config.hasPath("semantic_search.default_k")
                 ? Platform.config.getInt("semantic_search.default_k") : 50;
-        Object kObj = dto.getSemanticParams().get("k");
+        Object kObj = semanticParams.get("k");
         int k = defaultK;
         if (kObj instanceof Number) k = ((Number) kObj).intValue();
         if (k <= 0) {
