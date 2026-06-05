@@ -53,6 +53,11 @@ public class EnrichActor extends SearchBaseActor {
     @SuppressWarnings("unchecked")
     private Future<Response> triggerEnrich(Request request) {
         List<String> identifiers = parseIdentifiers(request);
+        int maxIds = Platform.config.hasPath("enrich.max_identifiers")
+                ? Platform.config.getInt("enrich.max_identifiers") : 100;
+        if (identifiers.size() > maxIds)
+            throw new ClientException("ERR_TOO_MANY_IDENTIFIERS",
+                    "Maximum " + maxIds + " identifiers per request, got: " + identifiers.size());
         String topic = Platform.config.hasPath("kafka.publish.request.topic")
                 ? Platform.config.getString("kafka.publish.request.topic")
                 : "sunbirddev.publish.job.request";
