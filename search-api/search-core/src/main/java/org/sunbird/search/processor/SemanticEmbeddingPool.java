@@ -8,14 +8,14 @@ import java.util.concurrent.ForkJoinPool;
  * Dedicated thread pool for blocking embedding HTTP calls.
  * Keeps embed latency off the Pekko actor dispatcher — see DESIGN.md §Threading.
  */
-final class SemanticEmbeddingPool {
+public final class SemanticEmbeddingPool {
 
     private static volatile ForkJoinPool pool;
     private static volatile ExecutionContext context;
 
     private SemanticEmbeddingPool() { }
 
-    static ExecutionContext context() {
+    public static ExecutionContext context() {
         if (context == null) {
             synchronized (SemanticEmbeddingPool.class) {
                 if (context == null) {
