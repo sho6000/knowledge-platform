@@ -5,7 +5,7 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import java.io.File
 import java.nio.file.Paths
 import javax.xml.parsers.SAXParserFactory
-
+import play.api.libs.json.Json
 import org.sunbird.cloudstore.StorageService
 import org.sunbird.common.exception.ClientException
 import org.sunbird.graph.OntologyEngineContext
@@ -45,8 +45,8 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                         scoList.foreach(sco => getValidatedLaunchFile(extractionBasePath, sco.getOrElse("href", "")))
                         
                         val launchFile = scoList.head.getOrElse("href", "")
-                        val scoListJson = ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList)
-                        
+                        // val scoListJson = ScormMimeTypeMgrImpl.mapper.writeValueAsString(scoList)
+                        val scoListJsonObj = Json.toJson(scoList)
                         // removed manual node.getMetadata.put calls
 
                         val urls: Array[String] = uploadArtifactToCloud(uploadFile, objectId, filePath)
@@ -59,7 +59,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                             "s3Key"       -> urls(IDX_S3_KEY),
                             "size"        -> getFileSize(uploadFile).asInstanceOf[AnyRef],
                             "launchFile"  -> launchFile,
-                            "scoList"     -> scoListJson
+                            "scoList"     -> scoListJsonObj
                         )
 
                     } else {
@@ -73,39 +73,52 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         }
     }
 
-    private def getValidatedLaunchFile(extractionBasePath: String, launchFile: String): String = {
-        if (launchFile.isEmpty) {
-            throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
-        }
-
-        // Validate launchFile containment and existence
-        val basePath = Paths.get(extractionBasePath)
-        val launchPath = basePath.resolve(launchFile).normalize()
-        
-        TelemetryManager.info(s"Validating launch file: basePath=$basePath, launchFile=$launchFile, combinedPath=${launchPath.toAbsolutePath}")
-
-        if (!launchPath.startsWith(basePath)) {
-            TelemetryManager.error("ERR_INVALID_FILE:: Potential path traversal detected: " + launchFile)
-            throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
-        }
-
-        if (!launchPath.toFile.exists() || launchPath.toFile.isDirectory) {
-            TelemetryManager.error("ERR_INVALID_FILE:: Launch file defined in imsmanifest.xml does not exist or is a directory: " + launchFile)
-            throw new ClientException("ERR_INVALID_FILE", "The launch file '" + launchFile + "' specified in imsmanifest.xml is missing or invalid!")
-        }
-        
-        launchFile
+private def getValidatedLaunchFile(extractionBasePath: String, launchFile: String): String = {
+    if (launchFile.isEmpty) {
+        throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
     }
 
-    private def getScoList(xml: Elem): List[Map[String, String]] = {
-        (xml \\ "item").filter(item => (item \@ "identifierref").nonEmpty).map { item =>
-            val ref = item \@ "identifierref"
-            val title = (item \ "title").text
-            val href = (xml \\ "resource").find(res => (res \@ "identifier") == ref).map(_ \@ "href").getOrElse("")
-            Map("identifier" -> (item \@ "identifier"), "title" -> title, "href" -> href)
-        }.toList
+    val delimiterIndex = launchFile.indexWhere(c => c == '?' || c == '#')
+    val cleanLaunchFile = if (delimiterIndex != -1) launchFile.substring(0, delimiterIndex) else launchFile
+
+    val basePath = Paths.get(extractionBasePath)
+    val launchPath = basePath.resolve(cleanLaunchFile).normalize()
+    
+    TelemetryManager.info(s"Validating launch file: basePath=$basePath, launchFile=$cleanLaunchFile, combinedPath=${launchPath.toAbsolutePath}")
+
+    if (!launchPath.startsWith(basePath)) {
+        TelemetryManager.error("ERR_INVALID_FILE:: Potential path traversal detected: " + cleanLaunchFile)
+        throw new ClientException("ERR_INVALID_FILE", "Invalid launch file path!")
     }
 
+    if (!launchPath.toFile.exists() || launchPath.toFile.isDirectory) {
+        TelemetryManager.error("ERR_INVALID_FILE:: Launch file defined in imsmanifest.xml does not exist or is a directory: " + cleanLaunchFile)
+        throw new ClientException("ERR_INVALID_FILE", "The launch file '" + cleanLaunchFile + "' specified in imsmanifest.xml is missing or invalid!")
+    }
+
+    launchFile
+}
+
+ private def getScoList(xml: Elem): List[Map[String, String]] = {
+    (xml \\ "item").filter(item => (item \@ "identifierref").nonEmpty).map { item =>
+        val ref = item \@ "identifierref"
+        val title = (item \ "title").text
+        val baseHref = (xml \\ "resource")
+          .find(res => (res \@ "identifier") == ref)
+          .map(_ \@ "href")
+          .getOrElse("")
+        
+        val parameters = item \@ "parameters"
+        val finalHref = if (parameters.nonEmpty) baseHref + parameters else baseHref
+
+        Map(
+            "identifier" -> (item \@ "identifier"), 
+            "title"      -> title, 
+            "href"       -> finalHref,
+            "parameters" -> parameters 
+        )
+    }.toList
+}
     private def getSecureXml(manifestFile: File): Elem = {
         val spf = SAXParserFactory.newInstance()
         spf.setNamespaceAware(true)
@@ -117,6 +130,8 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
         val saxParser = spf.newSAXParser()
         scala.xml.XML.withSAXParser(saxParser).loadFile(manifestFile)
     }
+
+    
 
     override def upload(objectId: String, node: Node, fileUrl: String, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
         validateUploadRequest(objectId, node, fileUrl)
