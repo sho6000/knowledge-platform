@@ -178,9 +178,13 @@ public class SemanticQueryStrategy implements QueryStrategy {
                 // Every remaining must is a property filter (full-text leg
                 // already excluded). Demote to filter so kNN owns scoring.
                 for (QueryBuilder m : bx.must())   finalBool.filter(m);
-                // Implicit-filter shoulds (visibility/status wraps) — promote to
-                // filter so they constrain. Soft-constraint shoulds are excluded
-                // above by clearing softConstraints before the build.
+                // INVARIANT: softConstraints are cleared before buildTextQuery() (see
+                // dto.setSoftConstraints(null) above), so no soft-constraint should()
+                // can appear here. Every remaining should() is exclusively from
+                // getSearchQuery's implicit-filter visibility/status wrap — a hard
+                // visibility constraint that must be promoted to filter().
+                // If a scoring should() ever leaks through, it becomes a hard
+                // exclusion — keep the setSoftConstraints(null) guard intact.
                 for (QueryBuilder s : bx.should()) finalBool.filter(s);
             }
         } finally {
