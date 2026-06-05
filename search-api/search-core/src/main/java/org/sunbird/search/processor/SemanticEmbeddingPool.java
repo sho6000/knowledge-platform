@@ -1,5 +1,6 @@
 package org.sunbird.search.processor;
 
+import org.sunbird.common.Platform;
 import scala.concurrent.ExecutionContext;
 
 import java.util.concurrent.ForkJoinPool;
@@ -19,7 +20,9 @@ public final class SemanticEmbeddingPool {
         if (context == null) {
             synchronized (SemanticEmbeddingPool.class) {
                 if (context == null) {
-                    int parallelism = Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
+                    int parallelism = Platform.config.hasPath("semantic_search.embedding_pool_size")
+                            ? Platform.config.getInt("semantic_search.embedding_pool_size")
+                            : Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
                     pool    = new ForkJoinPool(parallelism);
                     context = ExecutionContext.fromExecutorService(pool);
                 }
