@@ -9,8 +9,8 @@ import java.util.Map;
  * Tiny LRU + TTL cache for query-text embeddings. The cache key is
  * {@code sha256(service:model:text)} so different models or providers cannot
  * collide. Thread-safe via coarse synchronization; expected QPS is low
- * relative to the OpenSearch path, and the cache hit branch is allocation-free
- * past the digest.
+ * relative to the OpenSearch path. Cache hits return a defensive copy of the
+ * stored vector so callers cannot corrupt the cached entry.
  *
  * Disable with {@code semantic_search.embedding_cache.enabled = false}.
  */
@@ -41,7 +41,7 @@ public class EmbeddingCache {
                 store.remove(key);
                 return null;
             }
-            return e.vector;
+            return e.vector.clone();
         }
     }
 
