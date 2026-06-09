@@ -51,13 +51,15 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                         
                         extractPackageInCloud(objectId, uploadFile, node, "snapshot", false)
                         
-                        Map[String, AnyRef](
-                            "identifier"  -> objectId,
-                            "artifactUrl" -> urls(IDX_S3_URL),
-                            "s3Key"       -> urls(IDX_S3_KEY),
-                            "size"        -> getFileSize(uploadFile).asInstanceOf[AnyRef],
-                            "launchFile"  -> launchFile,
-                            "scoList"     -> scoListJson
+                        Future(
+                            Map[String, AnyRef](
+                                "identifier"  -> objectId,
+                                "artifactUrl" -> urls(IDX_S3_URL),
+                                "s3Key"       -> urls(IDX_S3_KEY),
+                                "size"        -> getFileSize(uploadFile).asInstanceOf[AnyRef],
+                                "launchFile"  -> launchFile,
+                                "scoList"     -> scoListJson
+                            )
                         )
 
                     } else {
