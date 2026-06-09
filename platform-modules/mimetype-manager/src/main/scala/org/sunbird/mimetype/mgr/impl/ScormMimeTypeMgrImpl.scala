@@ -25,8 +25,6 @@ object ScormMimeTypeMgrImpl {
 class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeManager()(ss) with MimeTypeManager {
 
     override def upload(objectId: String, node: Node, uploadFile: File, filePath: Option[String], params: UploadParams)(implicit ec: ExecutionContext): Future[Map[String, AnyRef]] = {
-        Future {
-            blocking {
                 validateUploadRequest(objectId, node, uploadFile)
                 TelemetryManager.info("SCORM content upload for objectId:: " + objectId)
                 val extractionBasePath = getBasePath(objectId)
@@ -69,8 +67,7 @@ class ScormMimeTypeMgrImpl(implicit ss: StorageService) extends BaseMimeTypeMana
                 } finally {
                     delete(new File(extractionBasePath))
                 }
-            }
-        }
+
     }
 
 private def getValidatedLaunchFile(extractionBasePath: String, launchFile: String): String = {
