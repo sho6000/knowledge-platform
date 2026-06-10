@@ -5,30 +5,31 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.common.lucene.search.function.CombineFunction;
-import org.elasticsearch.common.lucene.search.function.FunctionScoreQuery.ScoreMode;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.MultiMatchQueryBuilder.Type;
-import org.elasticsearch.index.query.Operator;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.query.RangeQueryBuilder;
-import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
-import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder;
-import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHits;
-import org.elasticsearch.search.aggregations.Aggregation;
-import org.elasticsearch.search.aggregations.AggregationBuilder;
-import org.elasticsearch.search.aggregations.AggregationBuilders;
-import org.elasticsearch.search.aggregations.Aggregations;
-import org.elasticsearch.search.aggregations.bucket.terms.Terms;
-import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
-import org.elasticsearch.search.builder.SearchSourceBuilder;
-import org.elasticsearch.search.sort.NestedSortBuilder;
-import org.elasticsearch.search.sort.SortBuilders;
-import org.elasticsearch.search.sort.SortOrder;
+import org.opensearch.action.search.SearchResponse;
+import org.opensearch.common.lucene.search.function.CombineFunction;
+import org.opensearch.common.lucene.search.function.FunctionScoreQuery.ScoreMode;
+import org.opensearch.index.query.BoolQueryBuilder;
+import org.opensearch.index.query.MultiMatchQueryBuilder.Type;
+import org.opensearch.index.query.Operator;
+import org.opensearch.index.query.QueryBuilder;
+import org.opensearch.index.query.QueryBuilders;
+import org.opensearch.index.query.RangeQueryBuilder;
+import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder;
+import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder;
+import org.opensearch.index.query.functionscore.ScoreFunctionBuilders;
+import org.opensearch.search.SearchHit;
+import org.opensearch.search.SearchHits;
+import org.opensearch.search.aggregations.Aggregation;
+import org.opensearch.search.aggregations.AggregationBuilder;
+import org.opensearch.search.aggregations.AggregationBuilders;
+import org.opensearch.search.aggregations.Aggregations;
+import org.opensearch.search.aggregations.bucket.terms.Terms;
+import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.search.sort.NestedSortBuilder;
+import org.opensearch.search.sort.SortBuilders;
+import org.opensearch.search.sort.SortOrder;
+import org.sunbird.search.util.SearchInputValidator;
 import org.sunbird.common.Platform;
 import org.sunbird.search.client.ElasticSearchUtil;
 import org.sunbird.search.dto.SearchDTO;
@@ -37,6 +38,7 @@ import org.sunbird.search.util.SearchConstants;
 import org.sunbird.telemetry.logger.TelemetryManager;
 import scala.concurrent.ExecutionContext;
 import scala.concurrent.Future;
+import scala.runtime.AbstractFunction0;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,6 +47,23 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Builds and executes OpenSearch queries for text, semantic (kNN), and hybrid
+ * (RRF-fused) search modes.
+ *
+ * <p>Mode routing in {@link #processSearch}:
+ * <ul>
+ *   <li><b>text</b> — builds a BoolQuery inline and submits synchronously.</li>
+ *   <li><b>semantic</b> — offloads the blocking embedding HTTP call to
+ *       {@link SemanticEmbeddingPool}, then submits the kNN query asynchronously.</li>
+ *   <li><b>hybrid</b> — delegates to {@link HybridSearchExecutor}, which runs
+ *       text and semantic legs in parallel and fuses results with Reciprocal Rank Fusion.</li>
+ * </ul>
+ *
+ * <p>{@link #buildTextQuery} is package-accessible so {@link org.sunbird.search.strategy.QueryStrategy}
+ * implementations can reuse filter, soft-constraint, and implicit-filter composition
+ * without duplicating logic.
+ */
 public class SearchProcessor {
 
 	private ObjectMapper mapper = new ObjectMapper();
@@ -60,10 +79,52 @@ public class SearchProcessor {
 	public SearchProcessor(String indexName) {
 	}
 
+	/**
+	 * Executes a search request and returns a future containing the response map
+	 * with {@code results}, {@code count}, and optionally {@code facets}.
+	 *
+	 * <p>Mode dispatch:
+	 * <ul>
+	 *   <li>hybrid — routes to {@link HybridSearchExecutor} (parallel text + semantic, RRF fusion)</li>
+	 *   <li>semantic — offloads embedding call to {@link SemanticEmbeddingPool}, applies
+	 *       {@code min_score} if set in {@link org.sunbird.search.dto.SearchDTO#getSemanticParams()}</li>
+	 *   <li>text — inline BoolQuery path (pre-existing behaviour, unchanged)</li>
+	 * </ul>
+	 *
+	 * @param searchDTO      fully-populated search descriptor including search_mode and semantic params
+	 * @param includeResults true to populate {@code results}; false for count-only use cases
+	 */
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public Future<Map<String, Object>> processSearch(SearchDTO searchDTO, boolean includeResults)
 			throws Exception {
+		// Hybrid mode runs two queries and fuses their ranks; route out before
+		// the single-query path. SearchProcessor is re-entrant — HybridSearchExecutor
+		// will call this method back twice with mode flipped to text and semantic.
+		if (SearchConstants.SEARCH_MODE_HYBRID.equals(searchDTO.getSearchMode())) {
+			return org.sunbird.search.processor.HybridSearchExecutor.execute(searchDTO, this);
+		}
 		List<Map<String, Object>> groupByFinalList = new ArrayList<Map<String, Object>>();
+		// Semantic mode calls client.embed() — a blocking HTTP call. Run processSearchQuery
+		// on the dedicated embedding pool so the actor dispatcher is never blocked.
+		if (SearchConstants.SEARCH_MODE_SEMANTIC.equals(searchDTO.getSearchMode())) {
+			return Future.apply(new AbstractFunction0<SearchSourceBuilder>() {
+				@Override public SearchSourceBuilder apply() {
+					try { return processSearchQuery(searchDTO, groupByFinalList, true); }
+					catch (Exception e) { throw new RuntimeException(e); }
+				}
+			}, SemanticEmbeddingPool.context()).flatMap(new org.apache.pekko.dispatch.Mapper<SearchSourceBuilder, Future<Map<String, Object>>>() {
+				@Override public Future<Map<String, Object>> apply(SearchSourceBuilder ssb) {
+					Future<SearchResponse> sr;
+					try { sr = ElasticSearchUtil.search(SearchConstants.COMPOSITE_SEARCH_INDEX, ssb); }
+					catch (Exception e) { throw new RuntimeException(e); }
+					return sr.map(new org.apache.pekko.dispatch.Mapper<SearchResponse, Map<String, Object>>() {
+						@Override public Map<String, Object> apply(SearchResponse searchResult) {
+							return buildSearchResponse(searchResult, searchDTO, groupByFinalList, includeResults, true);
+						}
+					}, ExecutionContext.Implicits$.MODULE$.global());
+				}
+			}, ExecutionContext.Implicits$.MODULE$.global());
+		}
 		SearchSourceBuilder query = processSearchQuery(searchDTO, groupByFinalList, true);
 		Future<SearchResponse> searchResponse = ElasticSearchUtil.search(
 				SearchConstants.COMPOSITE_SEARCH_INDEX,
@@ -71,31 +132,39 @@ public class SearchProcessor {
 
 		return searchResponse.map(new Mapper<SearchResponse, Map<String, Object>>() {
 			public Map<String, Object> apply(SearchResponse searchResult) {
-				Map<String, Object> resp = new HashMap<>();
-				if (includeResults) {
-					if (searchDTO.isFuzzySearch()) {
-						List<Map> results = ElasticSearchUtil.getDocumentsFromSearchResultWithScore(searchResult);
-						resp.put("results", results);
-					} else {
-						List<Object> results = ElasticSearchUtil.getDocumentsFromSearchResult(searchResult, Map.class);
-						resp.put("results", results);
-					}
-				}
-				Aggregations aggregations = searchResult.getAggregations();
-				if (null != aggregations) {
-					AggregationsResultTransformer transformer = new AggregationsResultTransformer();
-					if(CollectionUtils.isNotEmpty(searchDTO.getFacets())) {
-						resp.put("facets", (List<Map<String, Object>>) ElasticSearchUtil
-								.getCountFromAggregation(aggregations, groupByFinalList, transformer));
-					} else if(CollectionUtils.isNotEmpty(searchDTO.getAggregations())){
-						resp.put("aggregations", aggregateResult(aggregations));
-					}
-
-				}
-				resp.put("count", (int) searchResult.getHits().getTotalHits().value);
-				return resp;
+				return buildSearchResponse(searchResult, searchDTO, groupByFinalList, includeResults, false);
 			}
 		}, ExecutionContext.Implicits$.MODULE$.global());
+	}
+
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	private Map<String, Object> buildSearchResponse(SearchResponse searchResult, SearchDTO searchDTO,
+			List<Map<String, Object>> groupByFinalList, boolean includeResults, boolean isSemantic) {
+		Map<String, Object> resp = new HashMap<>();
+		if (includeResults) {
+			// Semantic mode always surfaces the cosine score so callers
+			// can see kNN relevance; text mode keeps prior contract
+			// (score only when fuzzy was requested).
+			if (searchDTO.isFuzzySearch() || isSemantic) {
+				List<Map> results = ElasticSearchUtil.getDocumentsFromSearchResultWithScore(searchResult);
+				resp.put("results", results);
+			} else {
+				List<Object> results = ElasticSearchUtil.getDocumentsFromSearchResult(searchResult, Map.class);
+				resp.put("results", results);
+			}
+		}
+		Aggregations aggregations = searchResult.getAggregations();
+		if (null != aggregations) {
+			AggregationsResultTransformer transformer = new AggregationsResultTransformer();
+			if (CollectionUtils.isNotEmpty(searchDTO.getFacets())) {
+				resp.put("facets", (List<Map<String, Object>>) ElasticSearchUtil
+						.getCountFromAggregation(aggregations, groupByFinalList, transformer));
+			} else if (CollectionUtils.isNotEmpty(searchDTO.getAggregations())) {
+				resp.put("aggregations", aggregateResult(aggregations));
+			}
+		}
+		resp.put("count", (int) searchResult.getHits().getTotalHits().value);
+		return resp;
 	}
 
 	public Map<String, Object> processCount(SearchDTO searchDTO) throws Exception {
@@ -233,11 +302,35 @@ public class SearchProcessor {
 
 		searchSourceBuilder.size(searchDTO.getLimit());
 		searchSourceBuilder.from(searchDTO.getOffset());
-		QueryBuilder query = getSearchQuery(searchDTO);
+		QueryBuilder query;
+		try {
+			query = org.sunbird.search.strategy.QueryStrategyFactory
+					.get(searchDTO.getSearchMode())
+					.build(searchDTO, this);
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to build query for mode=" + searchDTO.getSearchMode(), e);
+		}
 		if (searchDTO.isFuzzySearch())
+			relevanceSort = true;
+		// Semantic mode: kNN owns ranking, so skip the default name/lastUpdatedOn
+		// sort. Explicit sort_by from the request is still honored below.
+		if (SearchConstants.SEARCH_MODE_SEMANTIC.equals(searchDTO.getSearchMode()))
 			relevanceSort = true;
 
 		searchSourceBuilder.query(query);
+
+		if (SearchConstants.SEARCH_MODE_SEMANTIC.equals(searchDTO.getSearchMode())
+				&& searchDTO.getSemanticParams() != null) {
+			Object msObj = searchDTO.getSemanticParams().get("min_score");
+			if (msObj instanceof Number) {
+				float ms = ((Number) msObj).floatValue();
+				if (ms < 0f || ms > 1f)
+					throw new org.sunbird.common.exception.ClientException(
+							SearchConstants.ERR_SEMANTIC_MIN_SCORE_INVALID,
+							"semantic.min_score must be between 0.0 and 1.0, got: " + ms);
+				if (ms > 0f) searchSourceBuilder.minScore(ms);
+			}
+		}
 
 		if (sortBy && !relevanceSort
 				&& (null == searchDTO.getSoftConstraints() || searchDTO.getSoftConstraints().isEmpty())) {
@@ -726,7 +819,7 @@ public class SearchProcessor {
 	private QueryBuilder getMatchPhraseQuery(String propertyName, List<Object> values, boolean match) {
 		BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
 		for (Object value : values) {
-			String stringValue = String.valueOf(value);
+			String stringValue = SearchInputValidator.escapeRegexValue(String.valueOf(value));
 			if (match) {
 				queryBuilder.should(QueryBuilders
 						.regexpQuery(propertyName,
@@ -748,7 +841,7 @@ public class SearchProcessor {
 	private QueryBuilder getRegexQuery(String propertyName, List<Object> values) {
 		BoolQueryBuilder queryBuilder = QueryBuilders.boolQuery();
 		for (Object value : values) {
-			String stringValue = String.valueOf(value);
+			String stringValue = SearchInputValidator.escapeRegexValue(String.valueOf(value));
 			queryBuilder.should(QueryBuilders.regexpQuery(propertyName,
 					".*" + stringValue.toLowerCase()));
 		}
@@ -912,6 +1005,15 @@ public class SearchProcessor {
         }
         return aggregationList;
     }
+
+	/**
+	 * Exposed for QueryStrategy implementations. TextQueryStrategy delegates here
+	 * for unchanged existing behaviour. Semantic and hybrid strategies call this
+	 * to build filter sets, then compose with their own query logic (kNN, RRF).
+	 */
+	public QueryBuilder buildTextQuery(SearchDTO searchDTO) {
+		return getSearchQuery(searchDTO);
+	}
 
 	private QueryBuilder getSearchQuery(SearchDTO searchDTO) {
 		BoolQueryBuilder boolQuery = new BoolQueryBuilder();

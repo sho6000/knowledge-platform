@@ -20,6 +20,21 @@
       "type": "string",
       "minLength": 5
     },
+    "launchFile": {
+      "type": "string"
+    },
+    "scoList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "identifier": { "type": "string" },
+          "title": { "type": "string" },
+          "href": { "type": "string" },
+          "parameters": { "type": "string" }
+        }
+      }
+    },
     "code": {
       "type": "string"
     },
@@ -59,6 +74,7 @@
         "application/vnd.ekstep.content-archive",
         "application/vnd.ekstep.content-collection",
         "application/vnd.ekstep.plugin-archive",
+        "application/vnd.ekstep.scorm-archive",
         "application/vnd.ekstep.h5p-archive",
         "application/epub",
         "text/x-url",
