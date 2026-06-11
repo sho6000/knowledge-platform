@@ -704,6 +704,27 @@
         "external"
       ]
     },
+    "responseProcessing": {
+      "type": "object"
+    },
+    "correctOrder": {
+      "type": "array"
+    },
+    "pairs": {
+      "type": "array"
+    },
+    "sentence": {
+      "type": "string"
+    },
+    "rhsChoices": {
+      "type": "array"
+    },
+    "choices": {
+      "type": "array"
+    },
+    "templateDeclaration": {
+      "type": "object"
+    },
     "templateId":{
       "type": "string"
     },
