@@ -48,10 +48,11 @@ class QuestionActor @Inject()(implicit oec: OntologyEngineContext) extends Abstr
     val fields: util.List[String] = request.get("fields").asInstanceOf[String].split(",").filter(field => StringUtils.isNotBlank(field) && !StringUtils.equalsIgnoreCase(field, "null")).toList.asJava
     val extPropNameList:util.List[String] = DefinitionNode.getExternalProps(request.getContext.get("graph_id").asInstanceOf[String], request.getContext.get("version").asInstanceOf[String], request.getContext.get("schemaName").asInstanceOf[String]).asJava
     request.getRequest.put("fields", extPropNameList)
+    val lang = request.getRequest.getOrDefault("lang", "").asInstanceOf[String]
     DataNode.read(request).map(node => {
       if (StringUtils.equalsIgnoreCase(node.getMetadata.get("visibility").asInstanceOf[String], "Private"))
         throw new ClientException(AssessmentErrorCodes.ERR_ACCESS_DENIED, s"Question visibility is private, hence access denied")
-      ResponseHandler.OK.put("question", AssessmentV5Manager.getQuestionMetadata(node, fields, extPropNameList))
+      ResponseHandler.OK.put("question", AssessmentV5Manager.getQuestionMetadata(node, fields, extPropNameList, lang))
     })
   }
 
@@ -75,13 +76,14 @@ class QuestionActor @Inject()(implicit oec: OntologyEngineContext) extends Abstr
   }
 
   def listQuestions(request: Request): Future[Response] = {
-    RequestUtil.validateListRequest(request)
-    val fields: util.List[String] = request.get("fields").asInstanceOf[String].split(",").filter(field => StringUtils.isNotBlank(field) && !StringUtils.equalsIgnoreCase(field, "null")).toList.asJava
-    request.getRequest.put("fields", fields)
-    DataNode.search(request).map(nodeList => {
-      val questionList = nodeList.map(node => AssessmentV5Manager.getQuestionMetadata(node, fields, List().asJava)).asJava
-      ResponseHandler.OK.put("questions", questionList).put("count", questionList.size)
-    })
+    Future(RequestUtil.validateListRequest(request)).flatMap { _ =>
+      val fields: util.List[String] = request.get("fields").asInstanceOf[String].split(",").filter(field => StringUtils.isNotBlank(field) && !StringUtils.equalsIgnoreCase(field, "null")).toList.asJava
+      request.getRequest.put("fields", fields)
+      DataNode.search(request).map(nodeList => {
+        val questionList = nodeList.map(node => AssessmentV5Manager.getQuestionMetadata(node, fields, List().asJava)).asJava
+        ResponseHandler.OK.put("questions", questionList).put("count", questionList.size)
+      })
+    }
   }
 
   def privateRead(request: Request)(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[Response] = {
