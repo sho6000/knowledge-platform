@@ -20,24 +20,6 @@
       "type": "string",
       "minLength": 5
     },
-    "launchFile": {
-      "type": "string"
-    },
-    "scormVersion": {
-      "type": "string"
-    },
-    "scoList": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "identifier": { "type": "string" },
-          "title": { "type": "string" },
-          "href": { "type": "string" },
-          "parameters": { "type": "string" }
-        }
-      }
-    },
     "code": {
       "type": "string"
     },
@@ -152,7 +134,7 @@
     "os": {
       "type": "array",
       "items": {
-        "type" : "string",
+        "type": "string",
         "enum": [
           "All",
           "Android",
@@ -160,7 +142,9 @@
           "Windows"
         ]
       },
-      "default": ["All"]
+      "default": [
+        "All"
+      ]
     },
     "minOsVersion": {
       "type": "string"
@@ -210,7 +194,9 @@
           "Other"
         ]
       },
-      "default": ["Student"]
+      "default": [
+        "Student"
+      ]
     },
     "posterImage": {
       "type": "string",
@@ -415,7 +401,9 @@
           "Other"
         ]
       },
-      "default": ["English"]
+      "default": [
+        "English"
+      ]
     },
     "languageCode": {
       "type": "array"
@@ -917,7 +905,9 @@
           "createdFor"
         ]
       },
-      "default": ["createdBy"]
+      "default": [
+        "createdBy"
+      ]
     },
     "reservedDialcodes": {
       "type": "object"
@@ -1039,66 +1029,66 @@
         "type": "object"
       }
     },
-    "subject" : {
+    "subject": {
       "type": "array"
     },
-    "medium" : {
+    "medium": {
       "type": "array"
     },
-    "gradeLevel" : {
+    "gradeLevel": {
       "type": "array"
     },
-    "topic" : {
+    "topic": {
       "type": "array"
     },
-    "subDomains" : {
+    "subDomains": {
       "type": "array"
     },
-    "subjectCodes" : {
+    "subjectCodes": {
       "type": "array"
     },
-    "difficultyLevel" : {
+    "difficultyLevel": {
       "type": "string"
     },
-    "board" : {
+    "board": {
       "type": "string"
     },
-    "licenseterms" : {
+    "licenseterms": {
       "type": "string"
     },
-    "copyrightYear" : {
+    "copyrightYear": {
       "type": "number",
       "minimum": 2020,
       "exclusiveMaximum": 3000
     },
-    "organisationId" : {
+    "organisationId": {
       "type": "string"
     },
     "itemSetPreviewUrl": {
       "type": "string"
     },
-    "textbook_name" : {
+    "textbook_name": {
       "type": "array"
     },
-    "level1Name" : {
+    "level1Name": {
       "type": "array"
     },
-    "level1Concept" : {
+    "level1Concept": {
       "type": "array"
     },
-    "level2Name" : {
+    "level2Name": {
       "type": "array"
     },
-    "level2Concept" : {
+    "level2Concept": {
       "type": "array"
     },
-    "level3Name" : {
+    "level3Name": {
       "type": "array"
     },
-    "level3Concept" : {
+    "level3Concept": {
       "type": "array"
     },
-    "sourceURL" : {
+    "sourceURL": {
       "type": "string"
     },
     "me_totalTimeSpentInSec": {
@@ -1132,12 +1122,18 @@
       "properties": {
         "enabled": {
           "type": "string",
-          "enum": ["Yes","No"],
+          "enum": [
+            "Yes",
+            "No"
+          ],
           "default": "No"
         },
         "autoBatch": {
           "type": "string",
-          "enum": ["Yes","No"],
+          "enum": [
+            "Yes",
+            "No"
+          ],
           "default": "No"
         }
       },
@@ -1152,7 +1148,10 @@
       "properties": {
         "enabled": {
           "type": "string",
-          "enum": ["Yes","No"],
+          "enum": [
+            "Yes",
+            "No"
+          ],
           "default": "No"
         }
       },
@@ -1161,19 +1160,19 @@
       },
       "additionalProperties": false
     },
-    "discussionForum":{
+    "discussionForum": {
       "type": "object",
-      "properties":
-      {
-        "enabled":
-        {
+      "properties": {
+        "enabled": {
           "type": "string",
-          "enum": ["Yes", "No"],
+          "enum": [
+            "Yes",
+            "No"
+          ],
           "default": "No"
         }
       },
-      "default":
-      {
+      "default": {
         "enabled": "No"
       },
       "additionalProperties": false
@@ -1214,7 +1213,7 @@
     "showNotification": {
       "type": "boolean"
     },
-    "collectionId" : {
+    "collectionId": {
       "type": "string"
     },
     "learningOutcome": {
@@ -1226,19 +1225,19 @@
     "displayScore": {
       "type": "boolean"
     },
-    "catalogPaths" : {
+    "catalogPaths": {
       "type": "array",
       "items": {
         "type": "object"
       }
     },
-    "competencies" : {
+    "competencies": {
       "type": "array",
       "items": {
         "type": "object"
       }
     },
-    "sharedWith" : {
+    "sharedWith": {
       "type": "array"
     },
     "isExternal": {
@@ -1252,18 +1251,18 @@
         "Classroom"
       ]
     },
-    "creatorLogo" : {
+    "creatorLogo": {
       "type": "string",
       "format": "url"
     },
-    "subTitles" : {
+    "subTitles": {
       "type": "array",
       "items": {
         "type": "object"
       }
     },
-    "reviewStatus" : {
-      "type" : "string",
+    "reviewStatus": {
+      "type": "string",
       "enum": [
         "InReview",
         "Reviewed"
@@ -1299,13 +1298,13 @@
         "type": "string"
       }
     },
-    "targetFWIds":{
+    "targetFWIds": {
       "type": "array",
       "items": {
         "type": "string"
       }
     },
-    "targetBoardIds":{
+    "targetBoardIds": {
       "type": "array",
       "items": {
         "type": "string"
@@ -1338,13 +1337,13 @@
     "maxAttempts": {
       "type": "number"
     },
-    "se_FWIds":{
+    "se_FWIds": {
       "type": "array",
       "items": {
         "type": "string"
       }
     },
-    "se_boardIds":{
+    "se_boardIds": {
       "type": "array",
       "items": {
         "type": "string"
@@ -1374,13 +1373,13 @@
         "type": "string"
       }
     },
-    "se_boards":{
+    "se_boards": {
       "type": "array",
       "items": {
         "type": "string"
       }
     },
-    "se_subjects":{
+    "se_subjects": {
       "type": "array",
       "items": {
         "type": "string"
