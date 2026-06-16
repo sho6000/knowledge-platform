@@ -725,6 +725,12 @@
     "templateDeclaration": {
       "type": "object"
     },
+    "evalUnordered": {
+      "dataType": "boolean"
+    },
+    "isPartialScore": {
+      "dataType": "boolean"
+    },
     "templateId":{
       "type": "string"
     },
