@@ -13,7 +13,7 @@ RUN apt-get update \
 # so that exactly one CSP runtime jar is present in lib/; Java ServiceLoader picks it up automatically.
 # cloud_storage_auth_type defaults to OIDC (Kubernetes Workload Identity).
 # Override via K8s ConfigMap or `docker run -e` for local ACCESS_KEY-based development.
-ARG CSP=aws
+ARG CSP=azure
 ENV cloud_storage_type=${CSP}
 ENV cloud_storage_auth_type=OIDC
 
