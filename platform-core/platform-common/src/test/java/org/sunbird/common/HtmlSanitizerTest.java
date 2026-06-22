@@ -186,6 +186,84 @@ public class HtmlSanitizerTest {
     }
 
     @Test
+    public void testSanitizeMapKeepsMtfImageLabelsInEditorState() {
+        // MTF labels are localized maps: editorState.pairs[].left.en / right.en
+        String img = "<figure class=\"image\"><img src=\"https://blob.example.com/algebra.jpeg\" " +
+                "data-asset-variable=\"do_123\"></figure>";
+        Map<String, Object> left = new HashMap<>();
+        left.put("en", img);
+        Map<String, Object> pair = new HashMap<>();
+        pair.put("left", left);
+        List<Object> pairs = new ArrayList<>();
+        pairs.add(pair);
+        Map<String, Object> editorState = new HashMap<>();
+        editorState.put("pairs", pairs);
+        Map<String, Object> data = new HashMap<>();
+        data.put("editorState", editorState);
+
+        HtmlSanitizer.sanitizeMap(data);
+
+        Map<String, Object> outEditorState = (Map<String, Object>) data.get("editorState");
+        List<Object> outPairs = (List<Object>) outEditorState.get("pairs");
+        Map<String, Object> outLeft = (Map<String, Object>) ((Map<String, Object>) outPairs.get(0)).get("left");
+        String label = (String) outLeft.get("en");
+        Assert.assertTrue("Deep label under editorState should keep img", label.contains("<img"));
+        Assert.assertTrue("Should keep blob src", label.contains("https://blob.example.com/algebra.jpeg"));
+    }
+
+    @Test
+    public void testSanitizeMapKeepsMtfImageLabelsInInteractions() {
+        // interactions.response1.options.left[].label.en
+        String img = "<img src=\"https://blob.example.com/auditing.jpg\">";
+        Map<String, Object> label = new HashMap<>();
+        label.put("en", img);
+        Map<String, Object> option = new HashMap<>();
+        option.put("label", label);
+        List<Object> leftOptions = new ArrayList<>();
+        leftOptions.add(option);
+        Map<String, Object> options = new HashMap<>();
+        options.put("left", leftOptions);
+        Map<String, Object> response1 = new HashMap<>();
+        response1.put("type", "match");
+        response1.put("options", options);
+        Map<String, Object> interactions = new HashMap<>();
+        interactions.put("response1", response1);
+        Map<String, Object> data = new HashMap<>();
+        data.put("interactions", interactions);
+
+        HtmlSanitizer.sanitizeMap(data);
+
+        Map<String, Object> outInteractions = (Map<String, Object>) data.get("interactions");
+        Map<String, Object> outResp = (Map<String, Object>) outInteractions.get("response1");
+        Map<String, Object> outOptions = (Map<String, Object>) outResp.get("options");
+        List<Object> outLeft = (List<Object>) outOptions.get("left");
+        Map<String, Object> outLabel = (Map<String, Object>) ((Map<String, Object>) outLeft.get(0)).get("label");
+        String text = (String) outLabel.get("en");
+        Assert.assertTrue("Deep label under interactions should keep img", text.contains("<img"));
+        Assert.assertTrue("Should keep src", text.contains("https://blob.example.com/auditing.jpg"));
+    }
+
+    @Test
+    public void testSanitizeMapStillStripsXssInDeepRichTextLabel() {
+        // Broadened rich-text context must NOT allow scripts/handlers
+        Map<String, Object> label = new HashMap<>();
+        label.put("en", "<img src=x onerror=\"steal(document.cookie)\"><script>evil()</script>OK");
+        Map<String, Object> editorState = new HashMap<>();
+        editorState.put("title", label);
+        Map<String, Object> data = new HashMap<>();
+        data.put("editorState", editorState);
+
+        HtmlSanitizer.sanitizeMap(data);
+
+        Map<String, Object> outEditorState = (Map<String, Object>) data.get("editorState");
+        String text = (String) ((Map<String, Object>) outEditorState.get("title")).get("en");
+        Assert.assertFalse("onerror handler must be stripped", text.contains("onerror"));
+        Assert.assertFalse("script must be stripped", text.contains("<script>"));
+        Assert.assertFalse("handler body must be gone", text.contains("document.cookie"));
+        Assert.assertTrue("plain text retained", text.contains("OK"));
+    }
+
+    @Test
     public void testSanitizeRichTextAllowsMathTags() {
         String input = "<math><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></math>";
         String result = HtmlSanitizer.sanitizeRichText(input);
