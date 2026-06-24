@@ -140,8 +140,8 @@ public class SyncTransformer {
         document.put("graph_id", config.graphId);
 
         Object vertexId = vertexProps.get("id");
-        if (vertexId != null) {
-            document.put("node_id", vertexId);
+        if (vertexId instanceof Number) {
+            document.put("node_id", ((Number) vertexId).longValue());
         }
 
         // Ensure identifier exists
