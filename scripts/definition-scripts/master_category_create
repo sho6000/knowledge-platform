@@ -474,6 +474,7 @@ curl --location --request POST '{{host}}/object/category/v4/create' \
         }
     }
 }'
+
 curl --location --request POST '{{host}}/object/category/v4/create' \
 --header 'Content-Type: application/json' \
 --data-raw '{
