@@ -38,23 +38,16 @@
 ARG DHI_IMAGE_DEV=dhi.io/eclipse-temurin:11.0.31.11-jdk-debian13-dev
 ARG DHI_IMAGE_RUNTIME=dhi.io/eclipse-temurin:11.0.31-debian13
 
-# ---- build stage ----
-FROM maven:3.9-eclipse-temurin-11 AS build
-WORKDIR /build
-COPY . .
-RUN mvn clean install -DskipTests=true && mvn play2:dist -pl knowlg-service
-
-# ---- prep stage: unzip/curl need apt, so use the dev variant here ----
-FROM --platform=linux/x86_64 ${DHI_IMAGE_DEV} AS prep
+FROM --platform=linux/x86_64 ${DHI_IMAGE_DEV} AS build
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y unzip curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /home/sunbird
-COPY --from=build /build/knowlg-service/target/knowlg-service-1.0-SNAPSHOT-dist.zip .
+COPY ./knowlg-service/target/knowlg-service-1.0-SNAPSHOT-dist.zip .
 RUN unzip knowlg-service-1.0-SNAPSHOT-dist.zip -d . && rm knowlg-service-1.0-SNAPSHOT-dist.zip
-COPY --from=build /build/schemas /home/sunbird/knowlg-service-1.0-SNAPSHOT/schemas
+COPY ./schemas /home/sunbird/knowlg-service-1.0-SNAPSHOT/schemas
 
 # ---- final runtime stage: minimal, nonroot, no shell ----
 FROM --platform=linux/x86_64 ${DHI_IMAGE_RUNTIME}
@@ -63,7 +56,7 @@ ENV cloud_storage_type=${CSP}
 ENV cloud_storage_auth_type=OIDC
 
 USER nonroot
-COPY --from=prep --chown=nonroot:nonroot /home/sunbird /home/sunbird
+COPY --from=build --chown=nonroot:nonroot /home/sunbird /home/sunbird
 WORKDIR /home/sunbird/
 
 CMD java -XX:+PrintFlagsFinal $JAVA_OPTIONS -cp '/home/sunbird/knowlg-service-1.0-SNAPSHOT/lib/*' -Dconfig.file=/home/sunbird/knowlg-service-1.0-SNAPSHOT/config/application.conf -Dlogger.file=/home/sunbird/knowlg-service-1.0-SNAPSHOT/config/logback.xml play.core.server.ProdServerStart /home/sunbird/knowlg-service-1.0-SNAPSHOT
