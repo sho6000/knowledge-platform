@@ -51,5 +51,8 @@ public class SyncConfig {
         this.graphId = graphId;
         this.indexName = indexName;
         this.esConnInfo = esConnInfo;
+        this.relativePathPrefix = "CONTENT_STORAGE_BASE_PATH";
+        this.absolutePath = "";
+        this.cspMetaFields = Arrays.asList();
     }
 }
