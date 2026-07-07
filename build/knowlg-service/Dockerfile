@@ -38,6 +38,8 @@
 ARG DHI_IMAGE_DEV=dhi.io/eclipse-temurin:11.0.31.11-jdk-debian13-dev
 ARG DHI_IMAGE_RUNTIME=dhi.io/eclipse-temurin:11.0.31-debian13
 
+FROM dhi.io/busybox:1.38.0-alpine3.24 as shell
+
 FROM --platform=linux/x86_64 ${DHI_IMAGE_DEV} AS build
 RUN apt-get update \
     && apt-get upgrade -y \
@@ -51,6 +53,8 @@ COPY ./schemas /home/sunbird/knowlg-service-1.0-SNAPSHOT/schemas
 
 # ---- final runtime stage: minimal, nonroot, no shell ----
 FROM --platform=linux/x86_64 ${DHI_IMAGE_RUNTIME}
+COPY --from=shell /bin/busybox /bin/sh
+
 ARG CSP=azure
 ENV cloud_storage_type=${CSP}
 ENV cloud_storage_auth_type=OIDC
