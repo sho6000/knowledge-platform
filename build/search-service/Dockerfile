@@ -25,21 +25,14 @@
 # WORKDIR /home/sunbird/
 # CMD java -XX:+PrintFlagsFinal $JAVA_OPTIONS  -cp '/home/sunbird/search-service-1.0-SNAPSHOT/lib/*' -Dconfig.file=/home/sunbird/search-service-1.0-SNAPSHOT/config/application.conf -Dlogger.file=/home/sunbird/search-service-1.0-SNAPSHOT/config/logback.xml play.core.server.ProdServerStart /home/sunbird/search-service-1.0-SNAPSHOT
 
-
-
-
 ARG DHI_IMAGE_DEV=dhi.io/eclipse-temurin:11.0.31.11-jdk-debian13-dev
 ARG DHI_IMAGE_RUNTIME=dhi.io/eclipse-temurin:11.0.31-debian13
 
-# ---- build stage ----
-FROM maven:3.9-eclipse-temurin-11 AS build
-WORKDIR /build
-COPY . .
-RUN mvn clean install -DskipTests=true && cd search-api && mvn play2:dist -pl search-service
+FROM dhi.io/busybox:1.38.0-alpine3.24 as shell
 
 # ---- prep stage: unzip/curl need apt + root, so use the dev variant here ----
-FROM --platform=linux/x86_64 ${DHI_IMAGE_DEV} AS prep
-# check=skip=FromPlatformFlagConstDisallowed
+FROM --platform=linux/x86_64 ${DHI_IMAGE_DEV} AS build
+
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y unzip curl \
@@ -47,20 +40,20 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/sunbird
-COPY --from=build /build/search-api/search-service/target/search-service-1.0-SNAPSHOT-dist.zip .
+COPY ./search-api/search-service/target/search-service-1.0-SNAPSHOT-dist.zip .
 RUN unzip search-service-1.0-SNAPSHOT-dist.zip -d . && rm search-service-1.0-SNAPSHOT-dist.zip
-COPY --from=build /build/schemas /home/sunbird/search-service-1.0-SNAPSHOT/schemas
+COPY ./schemas /home/sunbird/search-service-1.0-SNAPSHOT/schemas
 
 # ---- final runtime stage: minimal, nonroot, no shell/apt ----
 FROM --platform=linux/x86_64 ${DHI_IMAGE_RUNTIME}
-# check=skip=FromPlatformFlagConstDisallowed
+COPY --from=shell /bin/busybox /bin/sh
 
 ARG CSP=azure
 ENV cloud_storage_type=${CSP}
 ENV cloud_storage_auth_type=OIDC
 
 USER nonroot
-COPY --from=prep --chown=nonroot:nonroot /home/sunbird /home/sunbird
+COPY --from=build --chown=nonroot:nonroot /home/sunbird /home/sunbird
 WORKDIR /home/sunbird/
 
 CMD java -XX:+PrintFlagsFinal $JAVA_OPTIONS -cp '/home/sunbird/search-service-1.0-SNAPSHOT/lib/*' -Dconfig.file=/home/sunbird/search-service-1.0-SNAPSHOT/config/application.conf -Dlogger.file=/home/sunbird/search-service-1.0-SNAPSHOT/config/logback.xml play.core.server.ProdServerStart /home/sunbird/search-service-1.0-SNAPSHOT
