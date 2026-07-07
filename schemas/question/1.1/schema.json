@@ -277,7 +277,8 @@
         "MCQ-SCA",
         "MTF",
         "SEQ",
-        "REO"
+        "REO",
+        "BOOL"
       ]
     },
     "editorState": {
