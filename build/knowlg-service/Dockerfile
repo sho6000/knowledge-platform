@@ -53,6 +53,7 @@ COPY ./schemas /home/sunbird/knowlg-service-1.0-SNAPSHOT/schemas
 
 # ---- final runtime stage: minimal, nonroot, no shell ----
 FROM --platform=linux/x86_64 ${DHI_IMAGE_RUNTIME}
+COPY --from=shell /lib/ld-musl-x86_64.so.1 /lib/ld-musl-x86_64.so.1
 COPY --from=shell /bin/busybox /bin/sh
 
 ARG CSP=azure
