@@ -1,7 +1,7 @@
 ARG DHI_IMAGE_DEV=dhi.io/eclipse-temurin:11.0.31.11-jdk-debian13-dev
 ARG DHI_IMAGE_RUNTIME=dhi.io/eclipse-temurin:11.0.31-debian13
 
-FROM dhi.io/busybox:1.38.0-alpine3.24 as shell
+FROM --platform=linux/x86_64 dhi.io/busybox:1.38.0-alpine3.24 as shell
 
 FROM --platform=linux/x86_64 ${DHI_IMAGE_DEV} AS build
 RUN apt-get update \
