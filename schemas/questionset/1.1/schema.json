@@ -177,6 +177,10 @@
     "pkgVersion": {
       "type": "number"
     },
+    "version": {
+      "type": "number",
+      "default": 1
+    },
     "versionKey": {
       "type": "string"
     },
@@ -450,7 +454,10 @@
       "type": "string",
       "enum": [
         "system",
-        "none"
+        "none",
+        "responseProcessing",
+        "offline",
+        "external"
       ]
     },
     "qumlVersion": {
@@ -567,7 +574,7 @@
         "Complete",
         "Score",
         "Duration",
-        "Score & Duration"
+        "Score and Duration"
       ]
     },
     "shuffle": {
@@ -710,5 +717,5 @@
       "type": "string"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }

@@ -428,7 +428,8 @@
         "SA",
         "MCQ-MCA",
         "MCQ-SCA",
-        "MTF"
+        "MTF",
+        "BOOL"
       ]
     },
     "scoringMode": {
@@ -606,5 +607,5 @@
       "type": "string"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }
