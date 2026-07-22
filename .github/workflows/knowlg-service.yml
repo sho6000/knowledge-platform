@@ -1,4 +1,4 @@
-name: Build and Push Knowlg Service Image
+name: Build and Push Search Service Image
 
 # GITHUB_TOKEN needs packages: write to push to ghcr.io (GitHub Container Registry)
 permissions:
@@ -22,27 +22,24 @@ jobs:
       - name: Check if build is enabled
         id: check
         env:
-          BUILD_ENABLED_VAR: ${{ vars.KNOWLG_SERVICE_BUILD_ENABLED }}
+          BUILD_ENABLED_VAR: ${{ vars.SEARCH_SERVICE_BUILD_ENABLED }}
         run: |
           if [ -n "$BUILD_ENABLED_VAR" ]; then
             ENABLED="$BUILD_ENABLED_VAR"
-             echo "Taking value from KNOWLG_SERVICE_BUILD_ENABLED: $ENABLED"
+            echo "Taking value from SEARCH_SERVICE_BUILD_ENABLED: $ENABLED"
           else
-            ENABLED=$(cat .github/build-config.json | jq -r '.services.knowlg_service')
-             echo "Taking value from build-config.json: $ENABLED"
+            ENABLED=$(cat .github/build-config.json | jq -r '.services.search_service')
+            echo "Taking value from build-config.json: $ENABLED"
           fi
           echo "enabled=$ENABLED" >> $GITHUB_OUTPUT
-          echo "Knowlg Service build enabled: $ENABLED"
+          echo "Search Service build enabled: $ENABLED"
 
   build-and-push:
     needs: check-config
     if: needs.check-config.outputs.should_build == 'true'
     runs-on: ubuntu-latest
-
-    # CSP (cloud service provider) selects the Maven profile and Docker build-arg.
-    # Set the repository/environment variable CSP to azure | aws | gcp | oci. Defaults to azure.
-    env:
-      CSP: ${{ vars.CSP || 'azure' }}
+    outputs:
+      image: ${{ steps.push.outputs.image }}
 
     steps:
       # Step 1: Checkout the code
@@ -70,29 +67,41 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       # Step 4: Build the project
-      - name: Build Knowlg Service
+      - name: Build Search API Service
         run: |
-          echo "Building with CSP profile: $CSP"
-          mvn clean install -DskipTests=true -P${CSP}
+          mvn clean install -DskipTests=true
 
       # Step 5: Package the project
-      - name: Package Knowlg Service
+      - name: Package Search API Service
         run: |
-          mvn play2:dist -pl knowlg-service -P${CSP}
+          cd search-api
+          mvn play2:dist -pl search-service
 
       # Step 6: Build Docker image
       - name: Build Docker Image
         run: |
-          IMAGE_NAME="knowlg-service"
+          IMAGE_NAME="search-api"
           IMAGE_TAG=$(echo "${{ github.ref_name }}_$(echo $GITHUB_SHA | cut -c1-7)" | tr '[:upper:]' '[:lower:]')
-          docker build --build-arg CSP=${CSP} -f build/knowlg-service/Dockerfile -t $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG} .
+          docker build -f build/search-service/Dockerfile -t $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG} .
 
           echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
 
       # Step 7: Push Docker Image
       - name: Push Docker Image
+        id: push
         run: |
           docker push $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG}
           echo "Pushed Docker image: $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG}"
-          
+          echo "image=$REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+  cve-scan:
+    needs: build-and-push
+    if: needs.build-and-push.outputs.image != ''
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    uses: ./.github/workflows/cve-check.yml
+    with:
+      image: ${{ needs.build-and-push.outputs.image }}
