@@ -102,6 +102,6 @@ jobs:
       contents: read
       packages: read
       security-events: write
-    uses: ./.github/workflows/cve-check.yml
+    uses: ./.github/workflows/trivy.yml
     with:
       image: ${{ needs.build-and-push.outputs.image }}
