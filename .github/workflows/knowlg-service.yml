@@ -108,7 +108,7 @@ jobs:
       packages: read
       security-events: write
       actions: read
-    uses: ./.github/workflows/cve-check.yml
+    uses: ./.github/workflows/cve-scan.yml
     with:
       image: ${{ needs.build-and-push.outputs.image }}
           
