@@ -38,6 +38,11 @@ jobs:
     needs: check-config
     if: needs.check-config.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write  # Required to upload SARIF files to Security tab
+      actions: read           # Required for upload-sarif to process results
     outputs:
       image: ${{ steps.push.outputs.image }}
 
@@ -87,6 +92,32 @@ jobs:
           echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
           echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
 
+      # Step 6a: Scan the locally-built image, non-blocking, produce SARIF
+      - name: Scan image for CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@7b7aa264d83dc58691451798b4d117d53d21edfe
+        with:
+          image-ref: ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: CRITICAL
+          exit-code: '0'
+
+      # Step 6b: Always upload whatever was found, even if we're about to block the push
+      - name: Upload CRITICAL findings to Code Scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # Step 6c: Block the push if any CRITICAL vulnerability was found
+      - name: Block push if CRITICAL found
+        run: |
+          COUNT=$(python3 -c "import json; d=json.load(open('trivy-results.sarif')); print(len(d['runs'][0].get('results', [])))")
+          echo "CRITICAL findings: $COUNT"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "CRITICAL vulnerability found — blocking push."
+            exit 1
+          fi
+
       # Step 7: Push Docker Image
       - name: Push Docker Image
         id: push
@@ -94,15 +125,3 @@ jobs:
           docker push $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG}
           echo "Pushed Docker image: $REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG}"
           echo "image=$REGISTRY_URL/${IMAGE_NAME}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-
-  cve-scan:
-    needs: build-and-push
-    if: needs.build-and-push.outputs.image != ''
-    permissions:
-      contents: read
-      packages: read
-      security-events: write
-      actions: read
-    uses: ./.github/workflows/cve-scan.yml
-    with:
-      image: ${{ needs.build-and-push.outputs.image }}
